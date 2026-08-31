@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block heading %}Operations Dashboard{% endblock %}
+
+{% block content %}
+<section class="kpi-row" id="kpi-row">
+  <div class="kpi" id="kpi-fortigate"><span class="kpi-label">FortiGate</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="kpi-collector"><span class="kpi-label">Collector</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="kpi-wan"><span class="kpi-label">WAN</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="kpi-database"><span class="kpi-label">Database</span><span class="kpi-value">—</span></div>
+</section>
+
+<section class="stat-grid" id="stat-grid">
+  <div class="stat"><span class="stat-label">Última captura</span><span class="stat-value" id="s-last">—</span></div>
+  <div class="stat"><span class="stat-label">Próxima captura</span><span class="stat-value" id="s-next">—</span></div>
+  <div class="stat"><span class="stat-label">Total observaciones</span><span class="stat-value" id="s-total">—</span></div>
+  <div class="stat"><span class="stat-label">Últimas 24 h</span><span class="stat-value" id="s-24h">—</span></div>
+  <div class="stat"><span class="stat-label">Días de captura</span><span class="stat-value" id="s-days">—</span></div>
+  <div class="stat"><span class="stat-label">Completitud</span><span class="stat-value" id="s-complete">—</span></div>
+  <div class="stat"><span class="stat-label">Gaps</span><span class="stat-value" id="s-gaps">—</span></div>
+  <div class="stat"><span class="stat-label">Eventos</span><span class="stat-value" id="s-events">—</span></div>
+  <div class="stat"><span class="stat-label">Errores API 24 h</span><span class="stat-value" id="s-apierr">—</span></div>
+  <div class="stat"><span class="stat-label">Tamaño BD</span><span class="stat-value" id="s-dbsize">—</span></div>
+</section>
+
+<section class="values-row" id="values-row"></section>
+
+<section class="chart-controls">
+  <label>Rango:
+    <select id="range-select"></select>
+  </label>
+  <span class="muted" id="chart-note"></span>
+</section>
+
+<section class="chart-grid">
+  {% for m in ["latency_ms","jitter_ms","packet_loss_pct","rx_mbps","tx_mbps","cpu_pct","memory_pct","active_sessions"] %}
+  <figure class="chart-card"><figcaption>{{ m }}</figcaption><canvas id="chart-{{ m }}"></canvas></figure>
+  {% endfor %}
+</section>
+{% endblock %}
+
+{% block scripts %}<script src="/static/js/dashboard.js"></script>{% endblock %}

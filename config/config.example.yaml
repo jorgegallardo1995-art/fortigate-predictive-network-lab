@@ -1,0 +1,119 @@
+# =============================================================================
+# Predictive Network Lab - non-secret configuration
+# =============================================================================
+# Secrets (host, token, ports, mode) live in .env - NEVER here.
+# This file is safe to commit. Everything here can be changed without touching code.
+# =============================================================================
+
+app:
+  technical_name: "FortiGate Predictive Network Collector"
+  display_name: "Predictive Network Lab"
+  subtitle: "FortiGate Telemetry & Network Continuity Research Platform"
+  dashboard_subtitle: "FortiGate 50F Telemetry Collector"
+
+# --- Acquisition ------------------------------------------------------------
+collector:
+  sampling_interval_seconds: 60
+  # If a cycle runs longer than the interval, the next scheduled run is skipped
+  # (never queued) and a MISSING_INTERVAL event is recorded.
+  max_cycle_overrun_seconds: 55
+  # Number of consecutive failed cycles before an API_ERROR event is raised.
+  failure_event_threshold: 3
+
+# --- FortiGate WAN / device ------------------------------------------------
+device:
+  wan_interface: "wan1"
+  # Contracted link speed (Mbps) used for utilisation %. Set to null to read
+  # the negotiated speed from the interface instead.
+  wan_speed_down_mbps: 200
+  wan_speed_up_mbps: 200
+
+# --- FortiOS REST API endpoints ------------------------------------------------
+# GET only. Paths are relative to  https://<host>:<port>/api/v2/
+# These are CANDIDATE endpoints for FortiOS 7.x and MUST be validated against the
+# real device with:  python scripts/probe_fortios_endpoints.py
+# If an endpoint 404s on your firmware, adjust it here - no code change needed.
+# A missing endpoint => the affected metrics are stored as NULL, the cycle continues.
+fortios_endpoints:
+  system_status:        "monitor/system/status"
+  system_resource:      "monitor/system/resource/usage"
+  system_interface:     "monitor/system/interface"
+  interface_select:     "monitor/system/interface/select"
+  available_interfaces: "monitor/system/available-interfaces"
+  router_ipv4:          "monitor/router/ipv4"
+  sensor_info:          "monitor/system/sensor-info"
+  sdwan_health_check:   "monitor/virtual-wan/health-check"
+  sdwan_members:        "monitor/virtual-wan/members"
+  cmdb_interface:       "cmdb/system/interface"
+  firmware:             "monitor/system/firmware"
+  time:                 "monitor/system/time"
+
+# --- Performance SLA mapping ------------------------------------------------
+# Maps the FortiGate health-check NAME (left) to a friendly label + target.
+# Adjust the names to match exactly the health-checks you created on the FortiGate.
+sla_targets:
+  HC_Cloudflare: { label: "cloudflare", target: "1.1.1.1" }
+  HC_Google:     { label: "google",     target: "8.8.8.8" }
+  HC_Quad9:      { label: "quad9",       target: "9.9.9.9" }
+  # HC_University: { label: "university", target: "changeme.duoc.cl" }
+
+# --- ICMP prober (runs on the Raspberry Pi, independent cross-check) ---------
+icmp_prober:
+  enabled: true
+  count: 5                # echo requests per target per cycle
+  timeout_seconds: 2
+  targets:
+    - { label: "isp_router",  address: "192.168.1.1" }
+    - { label: "cloudflare",  address: "1.1.1.1" }
+    - { label: "google",      address: "8.8.8.8" }
+    - { label: "quad9",       address: "9.9.9.9" }
+
+# --- Derived features -------------------------------------------------------
+features:
+  enabled: true
+  # Recompute the feature table this often (seconds).
+  recompute_interval_seconds: 300
+  windows_minutes: [5, 10, 15]
+
+# --- Dashboard thresholds --------------------------------------------------
+# VISUAL ONLY. These are NEVER used to auto-generate machine-learning labels.
+thresholds:
+  latency:      { warning: 80,  critical: 150 }   # ms
+  jitter:       { warning: 20,  critical: 50 }    # ms
+  packet_loss:  { warning: 1,   critical: 5 }     # %
+  cpu:          { warning: 70,  critical: 90 }    # %
+  memory:       { warning: 70,  critical: 90 }    # %
+  rx_utilization: { warning: 70, critical: 90 }   # %
+  tx_utilization: { warning: 70, critical: 90 }   # %
+
+# --- Gap detection --------------------------------------------------------
+gaps:
+  # A gap is recorded when: (now - previous_sample) > interval + tolerance
+  tolerance_seconds: 30
+
+# --- Machine-learning labelling (prepared, NOT applied automatically) -------
+ml_labels:
+  classes:
+    0: "NORMAL"
+    1: "DEGRADATION"
+    2: "FAILURE"
+  auto_label: false        # MUST stay false - labels are assigned manually later
+
+# --- Backups -------------------------------------------------------------------
+backup:
+  enabled: true
+  schedule_hour: 3         # local time
+  schedule_minute: 0
+  keep_days: 7
+  filename_prefix: "fortigate_"
+
+# --- Dashboard behaviour --------------------------------------------------
+dashboard:
+  refresh_interval_seconds: 30
+  history_ranges: ["1h", "6h", "12h", "24h", "7d", "30d"]
+
+# --- Logging -------------------------------------------------------------------
+logging:
+  filename: "collector.log"
+  max_bytes: 10485760      # 10 MB
+  backup_count: 10

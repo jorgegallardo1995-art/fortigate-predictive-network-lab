@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="es" data-mode="{{ mode }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ app_name }} — {% block title %}{{ active|capitalize }}{% endblock %}</title>
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">PNL</div>
+      <div>
+        <div class="brand-name">{{ app_name }}</div>
+        <div class="brand-sub">{{ app_subtitle }}</div>
+      </div>
+    </div>
+    <nav>
+      <a href="/"         class="{{ 'nav-active' if active == 'dashboard' }}">Dashboard</a>
+      <a href="/dataset"  class="{{ 'nav-active' if active == 'dataset' }}">Dataset</a>
+      <a href="/events"   class="{{ 'nav-active' if active == 'events' }}">Eventos</a>
+      <a href="/research" class="{{ 'nav-active' if active == 'research' }}">Research</a>
+      <a href="/system"   class="{{ 'nav-active' if active == 'system' }}">Sistema</a>
+      <a href="/docs" target="_blank" rel="noopener">API /docs ↗</a>
+    </nav>
+    <div class="sidebar-foot">
+      <span class="badge badge-{{ mode|lower }}">{{ mode }}</span>
+      <span class="muted">collector v{{ collector_version }}</span>
+    </div>
+  </aside>
+
+  <main class="content">
+    <header class="topbar">
+      <div>
+        <h1>{% block heading %}{{ app_name }}{% endblock %}</h1>
+        <p class="muted">{{ app_full_subtitle }}</p>
+      </div>
+      <div class="topbar-status" id="topbar-status"></div>
+    </header>
+
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+<script>
+  window.PNL = {
+    refreshSeconds: {{ refresh_seconds }},
+    historyRanges: {{ history_ranges | tojson }},
+    mode: "{{ mode }}"
+  };
+</script>
+<script src="/static/vendor/chart.umd.min.js" onerror="window.__noChart=true"></script>
+<script src="/static/js/api.js"></script>
+<script src="/static/js/charts.js"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block heading %}Research Dashboard{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <div class="panel-head">
+    <h2>Dataset experimental</h2>
+    <button class="btn" id="snapshot-btn">Generar research_metadata.json</button>
+  </div>
+  <dl class="meta-list" id="meta-list"></dl>
+</section>
+
+<section class="panel">
+  <h2>Variables disponibles</h2>
+  <ul class="chips" id="vars-available"></ul>
+  <h2>Variables no disponibles</h2>
+  <ul class="chips chips-muted" id="vars-unavailable"></ul>
+</section>
+
+<section class="panel">
+  <h2>Features derivadas (diccionario)</h2>
+  <div class="table-wrap">
+    <table id="feat-table">
+      <thead><tr><th>Nombre</th><th>Variable origen</th><th>Ventana</th><th>Fórmula</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+  const m = await PNLApi.get("/api/research/metadata");
+  const dl = document.getElementById("meta-list");
+  const row = (k, v) => `<dt>${k}</dt><dd>${v ?? "—"}</dd>`;
+  dl.innerHTML = [
+    row("Dispositivo", `${m.device.model ?? "—"} (${m.device.serial ?? "—"})`),
+    row("FortiOS", m.device.fortios_version),
+    row("Interfaz WAN", m.device.wan_interface),
+    row("Fuente de datos", m.acquisition.data_source),
+    row("Intervalo de muestreo", m.acquisition.sampling_interval_seconds + " s"),
+    row("Timezone", m.acquisition.timezone),
+    row("Ventanas de features", m.acquisition.feature_windows_minutes.join(" / ") + " min"),
+    row("Arquitectura collector", m.provenance.collector_architecture),
+    row("Python", m.provenance.python_version),
+    row("SO", m.provenance.os),
+    row("Collector version", m.provenance.collector_version),
+    row("Schema version", m.provenance.database_schema_version),
+    row("Git commit", m.provenance.git_commit),
+    row("Fecha inicio dataset", PNLApi.fmtTime(m.dataset.start)),
+    row("Fecha término (actual)", PNLApi.fmtTime(m.dataset.end)),
+    row("Días de captura", m.dataset.capture_days),
+    row("Observaciones", m.dataset.total_observations),
+    row("Muestras esperadas", m.dataset.expected_samples),
+    row("Muestras perdidas", m.dataset.lost_samples),
+    row("Completitud", m.dataset.completeness_pct + " %"),
+    row("Gaps", m.dataset.gaps.count),
+    row("Experimentos", m.dataset.experiments_total),
+  ].join("");
+
+  document.getElementById("vars-available").innerHTML =
+    m.variables.available.map(v => `<li>${v}</li>`).join("");
+  document.getElementById("vars-unavailable").innerHTML =
+    m.variables.unavailable.map(v => `<li title="${m.variables.unavailable_reasons[v] ?? ''}">${v}</li>`).join("");
+
+  document.querySelector("#feat-table tbody").innerHTML =
+    m.variables.derived_features.map(f =>
+      `<tr><td>${f.name}</td><td>${f.source}</td><td>${f.window}</td><td>${f.formula}</td></tr>`).join("");
+
+  document.getElementById("snapshot-btn").addEventListener("click", async (e) => {
+    e.target.disabled = true; e.target.textContent = "Generando…";
+    await PNLApi.post("/api/research/metadata/snapshot", {});
+    e.target.textContent = "research_metadata.json actualizado";
+  });
+});
+</script>
+{% endblock %}

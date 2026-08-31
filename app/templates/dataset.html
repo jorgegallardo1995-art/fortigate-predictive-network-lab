@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block heading %}Dataset{% endblock %}
+
+{% block content %}
+<section class="stat-grid" id="ds-grid">
+  <div class="stat"><span class="stat-label">Total observaciones</span><span class="stat-value" id="d-total">—</span></div>
+  <div class="stat"><span class="stat-label">Primera observación</span><span class="stat-value" id="d-first">—</span></div>
+  <div class="stat"><span class="stat-label">Última observación</span><span class="stat-value" id="d-last">—</span></div>
+  <div class="stat"><span class="stat-label">Días de captura</span><span class="stat-value" id="d-days">—</span></div>
+  <div class="stat"><span class="stat-label">Muestras esperadas</span><span class="stat-value" id="d-expected">—</span></div>
+  <div class="stat"><span class="stat-label">Muestras reales</span><span class="stat-value" id="d-real">—</span></div>
+  <div class="stat"><span class="stat-label">Muestras perdidas</span><span class="stat-value" id="d-lost">—</span></div>
+  <div class="stat"><span class="stat-label">Completitud</span><span class="stat-value" id="d-complete">—</span></div>
+  <div class="stat"><span class="stat-label">Registros válidos</span><span class="stat-value" id="d-valid">—</span></div>
+  <div class="stat"><span class="stat-label">Registros incompletos</span><span class="stat-value" id="d-incomplete">—</span></div>
+  <div class="stat"><span class="stat-label">Gaps</span><span class="stat-value" id="d-gaps">—</span></div>
+  <div class="stat"><span class="stat-label">Experimentos</span><span class="stat-value" id="d-exp">—</span></div>
+</section>
+
+<section class="panel">
+  <div class="panel-head">
+    <h2>Exportación</h2>
+    <div class="export-buttons">
+      <label>Fuente:
+        <select id="exp-source"><option value="REAL">REAL</option><option value="MOCK">MOCK</option></select>
+      </label>
+      <a class="btn" href="#" data-export="raw">RAW CSV</a>
+      <a class="btn" href="#" data-export="features">FEATURES CSV</a>
+      <a class="btn" href="#" data-export="events">EVENTS CSV</a>
+      <a class="btn" href="#" data-export="experiments">EXPERIMENTS CSV</a>
+      <a class="btn" href="#" data-export="gaps">GAPS CSV</a>
+      <a class="btn" href="#" data-export="dictionary">DATA DICTIONARY</a>
+    </div>
+  </div>
+</section>
+
+<section class="panel">
+  <h2>Estadística por variable</h2>
+  <div class="table-wrap">
+    <table id="var-table">
+      <thead><tr><th>Variable</th><th>N</th><th>Nulos %</th><th>Min</th><th>Max</th><th>Media</th><th>Std</th><th>P50</th><th>P95</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+  const src = document.getElementById("exp-source");
+  const stats = await PNLApi.get("/api/dataset/statistics");
+  const set = (id, v) => document.getElementById(id).textContent = v ?? "—";
+  set("d-total", stats.total_observations);
+  set("d-first", PNLApi.fmtTime(stats.first_observation));
+  set("d-last", PNLApi.fmtTime(stats.last_observation));
+  set("d-days", stats.capture_days);
+  set("d-expected", stats.expected_samples);
+  set("d-real", stats.real_samples);
+  set("d-lost", stats.lost_samples);
+  set("d-complete", stats.completeness_pct + " %");
+  set("d-valid", stats.valid_records);
+  set("d-incomplete", stats.incomplete_records);
+  set("d-gaps", stats.gaps.count);
+  set("d-exp", stats.experiments_total);
+
+  const vars = await PNLApi.get("/api/dataset/variables");
+  const tb = document.querySelector("#var-table tbody");
+  tb.innerHTML = vars.map(v => `<tr><td>${v.variable}</td><td>${v.count}</td><td>${v.null_pct}</td>
+    <td>${fmt(v.min)}</td><td>${fmt(v.max)}</td><td>${fmt(v.mean)}</td><td>${fmt(v.std)}</td>
+    <td>${fmt(v.p50)}</td><td>${fmt(v.p95)}</td></tr>`).join("");
+  function fmt(x){ return x === null || x === undefined ? "—" : (+x).toLocaleString(); }
+
+  document.querySelectorAll("[data-export]").forEach(a => a.addEventListener("click", e => {
+    e.preventDefault();
+    window.location = `/api/export/${a.dataset.export}?data_source=${src.value}&download=true`;
+  }));
+});
+</script>
+{% endblock %}

@@ -1,0 +1,12 @@
+# Development / testing dependencies (not installed on the Raspberry Pi in production).
+-r requirements.txt
+
+pytest>=8.2,<9.0
+pytest-asyncio>=0.23,<1.0
+pytest-cov>=5.0,<7.0
+respx>=0.21,<1.0          # mock httpx -> tests never touch the real FortiGate
+freezegun>=1.5,<2.0      # deterministic time in scheduler / gap tests
+ruff>=0.5,<1.0
+mypy>=1.10,<2.0
+types-PyYAML>=6.0
+types-python-dateutil>=2.9

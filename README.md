@@ -1,0 +1,238 @@
+# Predictive Network Lab — FortiGate Predictive Network Collector
+
+*FortiGate Telemetry & Network Continuity Research Platform*
+
+A 24/7 telemetry collector that builds a **traceable, reproducible, multivariate
+time-series dataset** from a FortiGate 50F, for the experimental phase of a
+doctoral thesis on early prediction of failures in telecommunications networks
+(LSTM). **This software does not train models.** It captures, stores, validates,
+visualises, documents and exports the experimental data.
+
+- **Development:** macOS (Apple Silicon), VS Code — MOCK mode, no FortiGate needed.
+- **Production:** Raspberry Pi (ARM64, Raspberry Pi OS 64-bit) — autonomous, `systemd`, 24/7.
+
+---
+
+## 1. Objective
+
+Build, over weeks/months, a dataset that later feeds LSTM training/evaluation.
+Priorities, in order: **data integrity → traceability → reproducibility →**
+visualisation. Raw observations are immutable; derived features are always
+recomputable; gaps are recorded, never back-filled; MOCK and REAL data never mix.
+
+## 2. Architecture
+
+```
+FortiGate 50F ──HTTPS/GET──► Raspberry Pi (one process)
+                              ├─ APScheduler  (1 cycle / 60 s, no overlap)
+                              ├─ TelemetryCollector → FortiGateClient (GET only)
+                              │                     └ MockProvider (MOCK_MODE)
+                              ├─ ICMP prober (Pi → targets, independent cross-check)
+                              ├─ SQLite + WAL  (SQLAlchemy 2.x, Alembic-ready)
+                              ├─ GapDetector · EventService · FeatureEngineering
+                              ├─ BackupService (daily)
+                              └─ FastAPI + Jinja2 + Chart.js dashboard
+                                     ▲ http://IP_RASPBERRY:8000  (LAN only)
+                                  Mac browser · CSV export · LSTM analysis (elsewhere)
+```
+
+One process serves the dashboard **and** runs the scheduler (FastAPI `lifespan`).
+One `systemd` service. See [app/](app/) for the module layout.
+
+## 3. Requirements
+
+- Python **3.11+** (3.12 recommended).
+- macOS Apple Silicon *or* Linux ARM64. No macOS-only dependencies.
+- FortiGate 50F with a **read-only REST API admin** (token) and, for network-quality
+  metrics, **SD-WAN + Performance SLA health-checks** configured in measurement-only
+  mode. See §5–6.
+
+Dependencies: FastAPI, Uvicorn, httpx, Pydantic v2, SQLAlchemy 2, Alembic,
+APScheduler, pandas, NumPy, PyYAML, Jinja2, tenacity. Full list in
+[requirements.txt](requirements.txt).
+
+## 4. Development on the Mac
+
+```bash
+git clone <repo> fortigate_predictive_collector
+cd fortigate_predictive_collector
+./scripts/development_mac.sh          # venv + deps + .env + DB + dev server
+# or manually:
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements-dev.txt
+cp .env.example .env                  # MOCK_MODE stays true
+uvicorn app.main:app --reload         # http://127.0.0.1:8000
+```
+
+`MOCK_MODE=true` generates synthetic data (`data_source=MOCK`) so you can build and
+test the dashboard, database, scheduler and feature pipeline with no FortiGate.
+
+## 5. FortiGate configuration
+
+### 5.1 Read-only REST API admin
+
+`config system accprofile` → profile with `sysgrp/netgrp/fwgrp/loggrp = read`,
+everything else `none`. Then **System → Administrators → Create New → REST API
+Admin**: assign that profile, set **Trusted Hosts** to the Raspberry Pi IP `/32`,
+and copy the generated **API key once** into `.env` (`FORTIGATE_API_TOKEN=`).
+Never paste the token anywhere else.
+
+### 5.2 SD-WAN + Performance SLA (measurement-only)
+
+Enable SD-WAN with the single WAN interface as the only member, create 2–3
+health-checks (`1.1.1.1`, `8.8.8.8`, `9.9.9.9`, protocol `ping`), and **do not
+create SD-WAN service rules** — routing is unchanged, only the SLA probes run.
+Keep console access during the change. Map the health-check names in
+[config/config.yaml](config/config.yaml) → `sla_targets`.
+
+Without SD-WAN, `latency/jitter/packet_loss` come only from the Pi's ICMP prober
+(documented as a separate measurement point).
+
+## 6. Identify the endpoints for *your* FortiOS (ETAPA 6)
+
+```bash
+python scripts/probe_fortios_endpoints.py
+```
+
+Issues **GET only** against every catalogued endpoint, prints which respond, and
+saves the JSON under `data/exports/fortios_probe_*/`. Adjust
+`config.yaml → fortios_endpoints` with the working paths. A missing endpoint →
+its metrics are stored `NULL`, the cycle continues.
+
+## 7. `.env` variables
+
+| Variable | Meaning |
+|---|---|
+| `FORTIGATE_HOST` / `FORTIGATE_PORT` | management IP/FQDN and HTTPS port |
+| `FORTIGATE_API_TOKEN` | read-only REST API key (**secret**) |
+| `FORTIGATE_VDOM` | `root` |
+| `VERIFY_SSL` | `false` for the self-signed cert |
+| `MOCK_MODE` | `true` (dev) / `false` (production) |
+| `DATA_DIR` | base dir for DB, exports, backups (see §13) |
+| `DATABASE_URL` | optional — set to a PostgreSQL URL to migrate off SQLite |
+| `DASHBOARD_HOST` / `DASHBOARD_PORT` | `127.0.0.1:8000` dev, `0.0.0.0:8000` Pi |
+| `TIMEZONE` | IANA tz for local timestamps (UTC is always primary) |
+| `RUN_SCHEDULER` | `false` to run the dashboard only |
+
+`.env` is git-ignored. The token is redacted from all logs.
+
+## 8. MOCK mode
+
+`MOCK_MODE=true` → every row `data_source=MOCK`. `MOCK_MODE=false` → `data_source=REAL`.
+Exports default to `REAL` and never mix the two.
+
+## 9. Local tests
+
+```bash
+pytest                 # 23 tests, no FortiGate access (httpx mocked with respx)
+ruff check app tests   # lint
+```
+
+## 10. Deployment on the Raspberry Pi
+
+```bash
+git clone <repo> ~/fortigate_predictive_collector
+cd ~/fortigate_predictive_collector
+sudo ./scripts/install_raspberry.sh    # checks arch/python, venv, deps, dirs,
+                                       # permissions, systemd unit, enable, start
+nano .env                              # set host, token, MOCK_MODE=false, DATA_DIR
+sudo systemctl restart fortigate-collector
+```
+
+## 11. systemd
+
+Unit: [systemd/fortigate-collector.service](systemd/fortigate-collector.service)
+(`After=network-online.target`, `Restart=always`, `RestartSec=10`, WAL checkpoint
+on stop).
+
+```bash
+sudo systemctl status  fortigate-collector
+sudo systemctl restart fortigate-collector
+sudo systemctl stop    fortigate-collector
+sudo systemctl start   fortigate-collector
+journalctl -u fortigate-collector -f
+```
+
+## 12. Dashboard
+
+`http://IP_RASPBERRY:8000` — LAN only, do **not** expose to the internet.
+Pages: **Dashboard** (KPIs, current values, 8 charts, 1h–30d, 30 s auto-refresh),
+**Dataset**, **Eventos**, **Research**, **Sistema**. API docs at `/docs`.
+Chart.js is vendored locally ([app/static/vendor/](app/static/vendor/)); the
+install scripts fetch it — the dashboard degrades to tables if it is absent.
+
+## 13. Dataset & database
+
+SQLite (`WAL`) at `${DATA_DIR}/fortigate.db`. `DATA_DIR` defaults to `./data` on
+the Mac and should point to a **USB SSD** on the Pi (e.g. `/mnt/data/fortigate`)
+to avoid SD-card wear and power-loss corruption. The Mac's dev DB is never copied
+to the Pi — the Pi starts a clean `REAL`-only dataset on first run.
+
+Tables: `telemetry_raw` (immutable, 1 row/cycle + full API snapshot),
+`telemetry_sla`, `probe_results`, `telemetry_features`, `network_events`,
+`collection_gaps`, `experiments`, `system_status`, `research_metadata`.
+Rough size: ~200 MB/month, ~1.3 GB in 6 months.
+
+Migrate to PostgreSQL later: set `DATABASE_URL`, run `alembic upgrade head`
+(models are portable, no code change).
+
+## 14. Export
+
+`/dataset` page or `GET /api/export/{raw|features|events|gaps|experiments|icmp|dictionary}`
+with `start`, `end`, `experiment_id`, `data_source` filters. CSV, UTF-8, ISO-8601
+UTC; RAW is wide with per-target SLA columns pivoted. Ready for pandas / NumPy /
+scikit-learn / TensorFlow-Keras.
+
+## 15. Backups
+
+Daily at 03:00 (configurable) via the SQLite online-backup API →
+`${DATA_DIR}/backups/fortigate_YYYY-MM-DD.db`, keep-N configurable, logged, active
+DB untouched. Manual: `./scripts/backup_database.sh`. Recommended: also `rsync`
+backups to the Mac.
+
+## 16. Logs
+
+`logs/collector.log` (rotating, 10 MB × 10) + journald. Records startup/shutdown,
+poll success/failure, API timeouts/errors, DB errors, gaps, restarts, backups,
+exports, experiments. **Never logs tokens or credentials.**
+
+## 17. Security
+
+Read-only API admin · trusted-host = Pi · GET only (the client has no
+POST/PUT/DELETE methods, enforced by a test) · token only in `.env`, redacted in
+logs · dashboard bound to the LAN.
+
+## 18. Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| `auth` errors | token in `.env`; trusted-host includes the Pi IP; profile is read-only |
+| metrics all `NULL` | run `probe_fortios_endpoints.py`; fix `fortios_endpoints` in config.yaml |
+| no SLA data | SD-WAN + health-checks configured? names match `sla_targets`? |
+| dashboard unreachable from Mac | `DASHBOARD_HOST=0.0.0.0`; same LAN; firewall |
+| charts missing | `curl` Chart.js into `app/static/vendor/chart.umd.min.js` |
+| gaps after reboot | expected — `collection_gaps` records reason `SYSTEM_REBOOT` |
+
+## 19. Scientific metadata
+
+Auto-collected: device model / anonymisable serial / FortiOS version, Pi model /
+arch / OS, Python & collector versions, dataset start, sampling interval,
+timezone, requested vs available vs unavailable variables, expected / obtained /
+lost samples, completeness %. Visible on `/research`, in `GET /api/research/metadata`.
+
+## 20. Reproducibility
+
+`POST /api/research/metadata/snapshot` (or the `/research` button) writes
+`research_metadata.json` at the project root: `collector_version`, `git_commit`,
+`fortios_version`, `sampling_interval`, `feature_windows`, variables, timezone,
+`database_schema_version`, Python version, OS, hardware. No secrets. Use it to
+document each experimental run in the thesis.
+
+---
+
+### Project stages
+
+1–4 (structure, config, DB, FortiGateClient) and 7–14 in MOCK: **done**.
+5–6 (real FortiGate connection & endpoint validation): needs the FortiOS version
+and the token in `.env`. 15–17 (Raspberry deployment & 24/7 validation): scripts
+and unit ready.

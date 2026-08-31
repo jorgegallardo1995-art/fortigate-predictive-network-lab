@@ -1,0 +1,39 @@
+# systemd unit for the FortiGate Predictive Network Collector (Raspberry Pi).
+# Installed to /etc/systemd/system/fortigate-collector.service by
+# scripts/install_raspberry.sh (paths/user are substituted there).
+
+[Unit]
+Description=FortiGate Predictive Network Collector (Predictive Network Lab)
+Documentation=file:__APP_DIR__/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__RUN_USER__
+Group=__RUN_USER__
+WorkingDirectory=__APP_DIR__
+EnvironmentFile=__APP_DIR__/.env
+ExecStart=__APP_DIR__/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-config /dev/null
+ExecReload=/bin/kill -HUP $MAINPID
+
+Restart=always
+RestartSec=10
+# Give the acquisition loop time to finish + checkpoint WAL on stop.
+TimeoutStopSec=45
+KillSignal=SIGINT
+
+# --- hardening ---
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=__DATA_DIR__ __APP_DIR__/logs __APP_DIR__
+PrivateTmp=true
+
+# --- logging: journald captures stdout/stderr; app also writes logs/collector.log ---
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fortigate-collector
+
+[Install]
+WantedBy=multi-user.target

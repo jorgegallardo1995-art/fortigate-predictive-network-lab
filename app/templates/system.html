@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block heading %}Salud de la plataforma{% endblock %}
+
+{% block content %}
+<section class="kpi-row" id="health-row">
+  <div class="kpi" id="h-fortigate"><span class="kpi-label">FortiGate API</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="h-collector"><span class="kpi-label">Collector</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="h-scheduler"><span class="kpi-label">Scheduler</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="h-database"><span class="kpi-label">Database</span><span class="kpi-value">—</span></div>
+</section>
+
+<section class="stat-grid">
+  <div class="stat"><span class="stat-label">Última colección OK</span><span class="stat-value" id="h-last">—</span></div>
+  <div class="stat"><span class="stat-label">Próxima colección</span><span class="stat-value" id="h-next">—</span></div>
+  <div class="stat"><span class="stat-label">Latencia API media</span><span class="stat-value" id="h-apilat">—</span></div>
+  <div class="stat"><span class="stat-label">Requests fallidas 24 h</span><span class="stat-value" id="h-failed">—</span></div>
+  <div class="stat"><span class="stat-label">Uptime collector</span><span class="stat-value" id="h-cup">—</span></div>
+  <div class="stat"><span class="stat-label">Uptime host</span><span class="stat-value" id="h-hup">—</span></div>
+  <div class="stat"><span class="stat-label">Tamaño BD</span><span class="stat-value" id="h-db">—</span></div>
+  <div class="stat"><span class="stat-label">Disco disponible</span><span class="stat-value" id="h-disk">—</span></div>
+</section>
+
+<section class="panel">
+  <h2>Plataforma</h2>
+  <p id="h-platform" class="muted"></p>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadHealth() {
+  const h = await PNLApi.get("/api/status");
+  const chip = (id, state) => {
+    const el = document.getElementById(id);
+    el.querySelector(".kpi-value").textContent = state.toUpperCase();
+    el.className = "kpi kpi-" + (state === "ok" ? "ok" : state === "n/a" ? "muted" : "bad");
+  };
+  chip("h-fortigate", h.checks.fortigate_api);
+  chip("h-collector", h.checks.collector);
+  chip("h-scheduler", h.checks.scheduler);
+  chip("h-database", h.checks.database);
+  const set = (id, v) => document.getElementById(id).textContent = v ?? "—";
+  set("h-last", PNLApi.fmtTime(h.last_successful_collection));
+  set("h-next", PNLApi.fmtTime(h.next_scheduled_collection));
+  set("h-apilat", h.average_api_latency_ms ? h.average_api_latency_ms + " ms" : "—");
+  set("h-failed", h.failed_requests_24h);
+  set("h-cup", PNLApi.fmtDuration(h.collector_uptime_seconds));
+  set("h-hup", PNLApi.fmtDuration(h.host_uptime_seconds));
+  set("h-db", PNLApi.fmtBytes(h.database_size_bytes));
+  set("h-disk", PNLApi.fmtBytes(h.disk_available_bytes));
+  set("h-platform", h.platform);
+}
+document.addEventListener("DOMContentLoaded", () => { loadHealth(); setInterval(loadHealth, PNL.refreshSeconds * 1000); });
+</script>
+{% endblock %}
