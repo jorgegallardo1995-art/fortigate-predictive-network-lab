@@ -33,6 +33,7 @@ _TX_RX = re.compile(r"(\d+)\s*packets transmitted,\s*(\d+)\s*(?:packets )?receiv
 class ProbeReading:
     label: str
     address: str
+    aggregate: bool = True  # counts toward the aggregate quality metrics
     packets_sent: int | None = None
     packets_received: int | None = None
     packet_loss_pct: float | None = None
@@ -64,11 +65,16 @@ class IcmpProber:
             return []
         with ThreadPoolExecutor(max_workers=min(8, len(self.targets))) as pool:
             return list(
-                pool.map(lambda t: self._probe_one(t["label"], t["address"]), self.targets)
+                pool.map(
+                    lambda t: self._probe_one(
+                        t["label"], t["address"], bool(t.get("aggregate", True))
+                    ),
+                    self.targets,
+                )
             )
 
-    def _probe_one(self, label: str, address: str) -> ProbeReading:
-        reading = ProbeReading(label=label, address=address)
+    def _probe_one(self, label: str, address: str, aggregate: bool = True) -> ProbeReading:
+        reading = ProbeReading(label=label, address=address, aggregate=aggregate)
         cmd = [self._ping, "-n", "-c", str(self.count), "-W", str(self.timeout), address]  # type: ignore[list-item]
         try:
             proc = subprocess.run(

@@ -66,8 +66,10 @@ icmp_prober:
   enabled: true
   count: 4                # echo requests per target per cycle (targets run in parallel)
   timeout_seconds: 1
+  # aggregate=false -> still recorded in probe_results, but excluded from the
+  # aggregate latency/jitter/loss (so the LAN hop does not skew internet-path stats).
   targets:
-    - { label: "isp_router",  address: "192.168.1.1" }   # Pi -> ISP router (last hop before internet)
+    - { label: "isp_router",  address: "192.168.1.1", aggregate: false }
     - { label: "cloudflare",  address: "1.1.1.1" }
     - { label: "google",      address: "8.8.8.8" }
     - { label: "quad9",       address: "9.9.9.9" }

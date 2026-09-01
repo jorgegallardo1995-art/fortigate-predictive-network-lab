@@ -196,10 +196,11 @@ def _has_default_route(routes: Any) -> bool | None:
 
 def _fill_quality_from_icmp(snap: SourceSnapshot, probes: list[ProbeReading]) -> None:
     """Populate the aggregate quality metrics from ICMP when no FortiGate SLA exists."""
-    ok = [p for p in probes if p.success and p.rtt_avg_ms is not None]
+    agg = [p for p in probes if p.aggregate]
+    ok = [p for p in agg if p.success and p.rtt_avg_ms is not None]
     lat = [p.rtt_avg_ms for p in ok]
     jit = [p.rtt_mdev_ms for p in ok if p.rtt_mdev_ms is not None]
-    loss = [p.packet_loss_pct for p in probes if p.packet_loss_pct is not None]
+    loss = [p.packet_loss_pct for p in agg if p.packet_loss_pct is not None]
     if lat:
         snap.metrics["latency_ms"] = round(sum(lat) / len(lat), 3)
     if jit:
