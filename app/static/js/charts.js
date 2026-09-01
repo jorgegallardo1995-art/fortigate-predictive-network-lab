@@ -46,9 +46,10 @@ window.PNLCharts = (function () {
       }
       return;
     }
-    // Show the viewer's local time on the axis (the dataset itself stays UTC).
+    // Axis labels in the research timezone (window.PNL.timezone); dataset stays UTC.
+    const tz = (window.PNL && window.PNL.timezone) || undefined;
     c.data.labels = timestamps.map(t =>
-      new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
+      new Date(t).toLocaleTimeString("es-CL", { timeZone: tz, hour: "2-digit", minute: "2-digit" }));
     c.data.datasets[0].data = values;
     c.update();
   }

@@ -29,6 +29,7 @@ def _base_context(active: str) -> dict[str, object]:
         "collector_version": COLLECTOR_VERSION,
         "refresh_seconds": cfg.get("dashboard.refresh_interval_seconds", 30),
         "history_ranges": cfg.get("dashboard.history_ranges", ["1h", "6h", "24h", "7d"]),
+        "timezone": s.timezone,
     }
 
 

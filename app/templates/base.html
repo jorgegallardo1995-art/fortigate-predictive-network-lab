@@ -48,7 +48,8 @@
   window.PNL = {
     refreshSeconds: {{ refresh_seconds }},
     historyRanges: {{ history_ranges | tojson }},
-    mode: "{{ mode }}"
+    mode: "{{ mode }}",
+    timezone: "{{ timezone }}"
   };
 </script>
 <script src="/static/vendor/chart.umd.min.js" onerror="window.__noChart=true"></script>
