@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -31,6 +32,10 @@ from app.api.fortigate_client import (
     FortiGateUnavailableError,
 )
 from app.core.config import get_settings
+
+# FortiOS throttles bursts of admin/API requests (HTTP 429) and locks the source
+# IP after repeated auth failures - pace the probe and bail out early on 429/401.
+_REQUEST_SPACING_S = 1.0
 
 # Extra candidate paths worth checking on 7.x (not in the default catalogue).
 EXTRA_CANDIDATES: dict[str, str] = {
@@ -72,10 +77,21 @@ def main() -> int:
         if not conn.get("reachable"):
             print("Device unreachable - aborting probe.")
             return 1
+        if conn.get("error", "").startswith("auth"):
+            print(
+                "\nAuthentication failed (HTTP 401). Fix this on the FortiGate before probing:\n"
+                "  * REST API admin -> Trusted Hosts must include this collector's IP (/32),\n"
+                "    or set 0.0.0.0/0 temporarily for testing.\n"
+                "  * The API key is shown only once at creation - regenerate it if unsure.\n"
+                "  * Check the admin account is enabled and not locked out.\n"
+                "Not probing further (repeated 401s trigger a source-IP lockout)."
+            )
+            return 1
 
         catalogue = {**resolve_endpoints(), **EXTRA_CANDIDATES}
         for key, path in catalogue.items():
             note = ENDPOINT_NOTES.get(key, "")
+            time.sleep(_REQUEST_SPACING_S)
             try:
                 resp = client.get_path(path)
                 keys = list(resp.results.keys()) if isinstance(resp.results, dict) else "(list)"
@@ -98,6 +114,10 @@ def main() -> int:
                 print(f"{'':14}{note}")
             print(f"{'':14}{detail}")
             summary.append({"key": key, "path": path, "status": status, "detail": str(detail)})
+
+            if "429" in str(detail):
+                print("\nHTTP 429 (rate limited) - stopping. Wait a few minutes and retry.")
+                break
 
     (out_dir / "_summary.json").write_text(
         json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8"
