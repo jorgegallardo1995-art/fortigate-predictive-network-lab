@@ -14,6 +14,7 @@ import re
 import shutil
 import statistics
 import subprocess
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from app.core.config import get_config
@@ -57,9 +58,14 @@ class IcmpProber:
             self.enabled = False
 
     def probe_all(self) -> list[ProbeReading]:
-        if not self.enabled:
+        """Ping every target. Targets are probed in parallel so the whole set
+        finishes in roughly one ``ping -c <count>`` instead of N of them."""
+        if not self.enabled or not self.targets:
             return []
-        return [self._probe_one(t["label"], t["address"]) for t in self.targets]
+        with ThreadPoolExecutor(max_workers=min(8, len(self.targets))) as pool:
+            return list(
+                pool.map(lambda t: self._probe_one(t["label"], t["address"]), self.targets)
+            )
 
     def _probe_one(self, label: str, address: str) -> ProbeReading:
         reading = ProbeReading(label=label, address=address)
@@ -97,5 +103,6 @@ class IcmpProber:
             except statistics.StatisticsError:
                 reading.rtt_mdev_ms = None
 
-        reading.success = proc.returncode == 0 and (reading.packet_loss_pct or 100.0) < 100.0
+        loss = reading.packet_loss_pct if reading.packet_loss_pct is not None else 100.0
+        reading.success = proc.returncode == 0 and loss < 100.0
         return reading

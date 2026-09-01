@@ -64,10 +64,10 @@ sla_targets:
 # --- ICMP prober (runs on the Raspberry Pi, independent cross-check) ---------
 icmp_prober:
   enabled: true
-  count: 5                # echo requests per target per cycle
-  timeout_seconds: 2
+  count: 4                # echo requests per target per cycle (targets run in parallel)
+  timeout_seconds: 1
   targets:
-    - { label: "isp_router",  address: "192.168.1.1" }
+    - { label: "isp_router",  address: "192.168.1.1" }   # Pi -> ISP router (last hop before internet)
     - { label: "cloudflare",  address: "1.1.1.1" }
     - { label: "google",      address: "8.8.8.8" }
     - { label: "quad9",       address: "9.9.9.9" }
