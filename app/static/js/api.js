@@ -1,4 +1,9 @@
 /* Minimal fetch helpers + formatters shared by every page. */
+window.addEventListener("DOMContentLoaded", () => {
+  const el = document.getElementById("tz-note");
+  if (el) el.textContent = "horario: " + (window.PNLApi ? window.PNLApi.tz : "local") + " · dataset en UTC";
+});
+
 window.PNLApi = {
   async get(path) {
     const r = await fetch(path, { headers: { Accept: "application/json" } });
@@ -14,9 +19,17 @@ window.PNLApi = {
     if (!r.ok) throw new Error(`${path} -> ${r.status}`);
     return r.json();
   },
+  // The API returns UTC ISO strings; the dashboard shows them in the viewer's
+  // local timezone. Exports and the database keep UTC.
+  tz: (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) { return "local"; } })(),
   fmtTime(iso) {
     if (!iso) return "—";
-    return String(iso).replace("T", " ").replace("+00:00", "").replace("Z", "") + " UTC";
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    return d.toLocaleString([], {
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+    });
   },
   fmtDuration(seconds) {
     if (seconds === null || seconds === undefined) return "—";

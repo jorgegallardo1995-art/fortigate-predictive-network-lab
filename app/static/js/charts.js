@@ -46,7 +46,9 @@ window.PNLCharts = (function () {
       }
       return;
     }
-    c.data.labels = timestamps.map(t => t.slice(11, 16));
+    // Show the viewer's local time on the axis (the dataset itself stays UTC).
+    c.data.labels = timestamps.map(t =>
+      new Date(t).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }));
     c.data.datasets[0].data = values;
     c.update();
   }
