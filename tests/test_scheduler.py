@@ -44,6 +44,26 @@ def test_two_cycles_derive_throughput(session) -> None:
     assert rows[1].rx_mbps is not None and rows[1].rx_mbps >= 0
 
 
+def test_icmp_fallback_fills_quality_when_no_sla() -> None:
+    from app.collector.icmp_prober import ProbeReading
+    from app.collector.telemetry_collector import _fill_quality_from_icmp
+    from app.schemas.telemetry import SourceSnapshot
+
+    snap = SourceSnapshot(data_source="REAL", success=True, metrics={})
+    probes = [
+        ProbeReading("cloudflare", "1.1.1.1", rtt_avg_ms=10.0, rtt_mdev_ms=1.0,
+                     packet_loss_pct=0.0, success=True),
+        ProbeReading("google", "8.8.8.8", rtt_avg_ms=20.0, rtt_mdev_ms=3.0,
+                     packet_loss_pct=0.0, success=True),
+    ]
+    _fill_quality_from_icmp(snap, probes)
+    assert snap.metrics["latency_ms"] == 15.0
+    assert snap.metrics["jitter_ms"] == 2.0
+    assert snap.metrics["packet_loss_pct"] == 0.0
+    assert snap.metrics["sla_status"] == "up"
+    assert snap.raw_json["quality_source"] == "icmp_from_collector"
+
+
 def test_derive_rates_handles_counter_reset() -> None:
     from app.database.models import TelemetryRaw
 

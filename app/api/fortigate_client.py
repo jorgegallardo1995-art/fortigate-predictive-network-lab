@@ -221,13 +221,36 @@ class FortiGateClient:
 
     def get_system_status(self) -> dict[str, Any]:
         resp = self.get("system_status")
-        data = resp.results if isinstance(resp.results, dict) else {}
+        data = dict(resp.results) if isinstance(resp.results, dict) else {}
+        # FortiOS 6.0.x returns an empty "results"; serial/version/build/hostname/model
+        # live at the top level of the payload.
+        for k in ("serial", "version", "build", "hostname", "model", "model_name"):
+            if isinstance(resp.raw, dict) and resp.raw.get(k) is not None:
+                data.setdefault(k, resp.raw[k])
         self._detected_version = resp.version or data.get("version") or self._detected_version
         return data
 
     def get_system_resource(self) -> dict[str, Any]:
         resp = self.get("system_resource")
         return resp.results if isinstance(resp.results, dict) else {}
+
+    def get_firmware(self) -> dict[str, Any]:
+        """Firmware info - ``results.current.platform-id`` gives the hardware model."""
+        resp = self.get("firmware")
+        return resp.results if isinstance(resp.results, dict) else {}
+
+    def get_cmdb_global(self) -> dict[str, Any]:
+        """``cmdb/system/global`` - hostname, timezone and other device-wide config."""
+        resp = self.get("cmdb_global")
+        return resp.results if isinstance(resp.results, dict) else {}
+
+    def get_cmdb_interface(self, name: str) -> dict[str, Any]:
+        """Configured (not runtime) interface attributes: mtu, mode, speed, alias."""
+        resp = self.get("cmdb_interface", params={"mkey": name})
+        res = resp.results
+        if isinstance(res, list):
+            return next((i for i in res if i.get("name") == name), res[0] if res else {})
+        return res if isinstance(res, dict) else {}
 
     def get_interface(self, name: str) -> dict[str, Any]:
         """Counters for a single interface via the ``interface_select`` endpoint."""

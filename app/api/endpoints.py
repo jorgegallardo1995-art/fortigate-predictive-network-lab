@@ -27,6 +27,7 @@ DEFAULT_ENDPOINTS: dict[str, str] = {
     "interface_select": "monitor/system/interface/select",
     "available_interfaces": "monitor/system/available-interfaces",
     "cmdb_interface": "cmdb/system/interface",
+    "cmdb_global": "cmdb/system/global",
     # routing
     "router_ipv4": "monitor/router/ipv4",
     # SD-WAN / performance SLA
@@ -44,7 +45,8 @@ ENDPOINT_NOTES: dict[str, str] = {
     "system_interface": "per-interface counters: rx/tx bytes, packets, errors, drops, link",
     "interface_select": "same as system_interface filtered by ?interface_name=",
     "available_interfaces": "interface inventory + speed/state",
-    "cmdb_interface": "configured speed, duplex, mtu, alias",
+    "cmdb_interface": "configured speed, duplex, mtu, alias, mode",
+    "cmdb_global": "hostname, timezone, admin timeout",
     "router_ipv4": "active routing table (default-route presence => WAN reachable)",
     "sdwan_health_check": "Performance SLA results: latency, jitter, packet loss, state",
     "sdwan_members": "SD-WAN member interface status",

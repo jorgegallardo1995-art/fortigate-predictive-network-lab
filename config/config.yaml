@@ -45,12 +45,16 @@ fortios_endpoints:
   sdwan_health_check:   "monitor/virtual-wan/health-check"
   sdwan_members:        "monitor/virtual-wan/members"
   cmdb_interface:       "cmdb/system/interface"
+  cmdb_global:          "cmdb/system/global"
   firmware:             "monitor/system/firmware"
   time:                 "monitor/system/time"
 
 # --- Performance SLA mapping ------------------------------------------------
 # Maps the FortiGate health-check NAME (left) to a friendly label + target.
-# Adjust the names to match exactly the health-checks you created on the FortiGate.
+# NOTE: the current device (FGT-50E, FortiOS 6.0.4) has NO SD-WAN / Performance
+# SLA configured, so virtual-wan/health-check returns nothing and the aggregate
+# latency/jitter/loss are filled from the Pi's ICMP prober instead (see below).
+# When you configure SD-WAN health-checks, put their exact names here.
 sla_targets:
   HC_Cloudflare: { label: "cloudflare", target: "1.1.1.1" }
   HC_Google:     { label: "google",     target: "8.8.8.8" }

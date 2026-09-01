@@ -43,6 +43,28 @@ def test_system_status_parsed() -> None:
 
 
 @respx.mock
+def test_fortios_6_0_empty_results_uses_top_level_fields() -> None:
+    """FortiOS 6.0.x returns results={} with serial/version/build at the top level."""
+    respx.get(f"{BASE}/monitor/system/status").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "results": {},
+                "serial": "FGT50E5619016282",
+                "version": "v6.0.4",
+                "build": 231,
+                "status": "success",
+            },
+        )
+    )
+    with _client() as c:
+        status = c.get_system_status()
+    assert status["serial"] == "FGT50E5619016282"
+    assert status["version"] == "v6.0.4"
+    assert c.detected_fortios_version == "v6.0.4"
+
+
+@respx.mock
 def test_404_endpoint_raises_endpoint_error() -> None:
     respx.get(f"{BASE}/monitor/virtual-wan/health-check").mock(return_value=httpx.Response(404))
     with _client() as c, pytest.raises(FortiGateEndpointError):

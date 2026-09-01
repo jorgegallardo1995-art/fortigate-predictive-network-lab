@@ -76,9 +76,12 @@ class FortiGateSource:
             status = _try("system_status", self.client.get_system_status)
             resource = _try("system_resource", self.client.get_system_resource)
             iface = _try("interface", lambda: self.client.get_interface(ctx.wan_interface))
+            iface_cfg = _try("cmdb_interface", lambda: self.client.get_cmdb_interface(ctx.wan_interface))
             routes = _try("router_ipv4", self.client.get_router_ipv4)
             health = _try("sdwan_health_check", self.client.get_sdwan_health_check)
             sensors = _try("sensor_info", self.client.get_sensor_info)
+            firmware = _try("firmware", self.client.get_firmware)
+            cfg_global = _try("cmdb_global", self.client.get_cmdb_global)
         except FortiGateAuthError as exc:
             snap.error = f"auth: {exc}"
             return snap
@@ -90,10 +93,16 @@ class FortiGateSource:
         status = status or {}
         resource = resource or {}
         iface = iface or {}
+        iface_cfg = iface_cfg or {}
+        firmware = firmware or {}
+        cfg_global = cfg_global or {}
 
+        model = status.get("model") or status.get("model_name")
+        if not model:
+            model = (firmware.get("current") or {}).get("platform-id")
         snap.identification = {
-            "device_hostname": status.get("hostname"),
-            "device_model": status.get("model") or status.get("model_name"),
+            "device_hostname": status.get("hostname") or cfg_global.get("hostname"),
+            "device_model": model,
             "serial_number": status.get("serial"),
             "fortios_version": self.client.detected_fortios_version or status.get("version"),
             "wan_interface": ctx.wan_interface,
@@ -101,7 +110,7 @@ class FortiGateSource:
 
         m: dict[str, Any] = {}
         _map_resource(resource, m)
-        _map_interface(iface, m, ctx)
+        _map_interface(iface, iface_cfg, m, ctx)
         m["default_route_present"] = _has_default_route(routes)
         m["temperature_c"] = _max_temperature(sensors)
 
@@ -132,29 +141,40 @@ def _map_resource(resource: dict[str, Any], m: dict[str, Any]) -> None:
     m["memory_pct"] = _pct("mem") if "mem" in resource else _pct("memory")
     m["disk_pct"] = _pct("disk")
     m["active_sessions"] = _i(_pct("session"))
-    m["new_sessions_per_second"] = _f(
-        (resource.get("session_setup_rate") or [{}])[0].get("current")
-        if isinstance(resource.get("session_setup_rate"), list)
-        else resource.get("setup_rate")
-    )
+    # 7.x: session_setup_rate ; 6.0.x: setuprate ; some builds: setup_rate
+    for _key in ("session_setup_rate", "setuprate"):
+        if _key in resource:
+            m["new_sessions_per_second"] = _pct(_key)
+            break
+    else:
+        m["new_sessions_per_second"] = _f(resource.get("setup_rate"))
+    # 6.0.x does not expose uptime via REST; leave NULL (restart detection falls
+    # back to collection gaps).
     m["uptime_seconds"] = _i(resource.get("uptime"))
 
 
-def _map_interface(iface: dict[str, Any], m: dict[str, Any], ctx: CycleContext) -> None:
+_DUPLEX_MAP = {1: "full", 2: "half", "1": "full", "2": "half"}
+
+
+def _map_interface(
+    iface: dict[str, Any], iface_cfg: dict[str, Any], m: dict[str, Any], ctx: CycleContext
+) -> None:
     m["rx_bytes"] = _i(iface.get("rx_bytes"))
     m["tx_bytes"] = _i(iface.get("tx_bytes"))
     m["rx_packets"] = _i(iface.get("rx_packets"))
     m["tx_packets"] = _i(iface.get("tx_packets"))
     m["rx_errors"] = _i(iface.get("rx_errors"))
     m["tx_errors"] = _i(iface.get("tx_errors"))
+    # 6.0.x interface/select has no drop counters -> NULL.
     m["rx_drops"] = _i(iface.get("rx_dropped") or iface.get("rx_drops"))
     m["tx_drops"] = _i(iface.get("tx_dropped") or iface.get("tx_drops"))
     link = iface.get("link") if "link" in iface else iface.get("status")
     m["interface_status"] = _link_str(link)
     m["link_status"] = _link_str(link)
     m["interface_speed"] = str(iface.get("speed")) if iface.get("speed") is not None else None
-    m["interface_duplex"] = iface.get("duplex")
-    m["interface_mtu"] = _i(iface.get("mtu"))
+    duplex = iface.get("duplex")
+    m["interface_duplex"] = _DUPLEX_MAP.get(duplex, duplex if isinstance(duplex, str) else None)
+    m["interface_mtu"] = _i(iface.get("mtu")) or _i(iface_cfg.get("mtu"))
     negotiated = _f(iface.get("speed"))
     configured = ctx.wan_speed_down_mbps
     m["interface_speed_mbps"] = configured if configured else negotiated
@@ -172,6 +192,23 @@ def _has_default_route(routes: Any) -> bool | None:
     if not isinstance(routes, list):
         return None
     return any(str(r.get("ip_mask", r.get("network", ""))).startswith("0.0.0.0") for r in routes)
+
+
+def _fill_quality_from_icmp(snap: SourceSnapshot, probes: list[ProbeReading]) -> None:
+    """Populate the aggregate quality metrics from ICMP when no FortiGate SLA exists."""
+    ok = [p for p in probes if p.success and p.rtt_avg_ms is not None]
+    lat = [p.rtt_avg_ms for p in ok]
+    jit = [p.rtt_mdev_ms for p in ok if p.rtt_mdev_ms is not None]
+    loss = [p.packet_loss_pct for p in probes if p.packet_loss_pct is not None]
+    if lat:
+        snap.metrics["latency_ms"] = round(sum(lat) / len(lat), 3)
+    if jit:
+        snap.metrics["jitter_ms"] = round(sum(jit) / len(jit), 3)
+    if loss:
+        snap.metrics["packet_loss_pct"] = round(sum(loss) / len(loss), 3)
+    snap.metrics["sla_status"] = "up" if ok else "down"
+    snap.metrics.setdefault("availability", 100.0 if ok else 0.0)
+    snap.raw_json["quality_source"] = "icmp_from_collector"
 
 
 def _max_temperature(sensors: Any) -> float | None:
@@ -247,6 +284,12 @@ class TelemetryCollector:
             snap = SourceSnapshot(data_source=self.data_source, success=False, error=str(exc))
 
         probes = self._collect_icmp(source, ctx)
+        # When the FortiGate has no Performance SLA configured (e.g. no SD-WAN),
+        # fall back to the Pi's ICMP measurements for the aggregate quality metrics
+        # so the network-quality family is not entirely NULL. This is measured at a
+        # different point (Pi -> target) and is recorded as such via probe_results.
+        if snap.success and not snap.sla and probes:
+            _fill_quality_from_icmp(snap, probes)
         end = utc_now()
 
         with session_scope() as session:
