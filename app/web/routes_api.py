@@ -31,6 +31,7 @@ from app.services.statistics_service import (
     dataset_overview,
     history_series,
     latest_values,
+    variable_coverage,
     variable_statistics,
 )
 
@@ -101,6 +102,14 @@ def dataset_variables(
     data_source: str | None = None, session: Session = Depends(get_session)
 ) -> list[dict[str, Any]]:
     return variable_statistics(session, data_source or _default_source())
+
+
+@router.get("/dataset/coverage")
+def dataset_coverage(
+    data_source: str | None = None, session: Session = Depends(get_session)
+) -> dict[str, Any]:
+    """Records collected per variable, grouped by family (feeds the /variables page)."""
+    return variable_coverage(session, data_source or _default_source())
 
 
 # --- events / gaps ----------------------------------------------------

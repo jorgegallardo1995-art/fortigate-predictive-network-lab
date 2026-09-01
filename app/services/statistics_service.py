@@ -6,13 +6,19 @@ from datetime import timedelta
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_config
 from app.core.timeutils import utc_now
 from app.database import repositories as repo
-from app.database.models import DATA_SOURCE_REAL, TelemetryRaw
+from app.database.models import (
+    DATA_SOURCE_REAL,
+    ProbeResult,
+    TelemetryFeature,
+    TelemetryRaw,
+    TelemetrySla,
+)
 from app.services.gap_detector import expected_samples_between, summarise_gaps
 
 _RANGE_TO_HOURS = {"1h": 1, "6h": 6, "12h": 12, "24h": 24, "7d": 168, "30d": 720}
@@ -72,6 +78,105 @@ def dataset_overview(session: Session, data_source: str = DATA_SOURCE_REAL) -> d
         "events_total": repo.count_events_since(session, first) if first else 0,
         "experiments_total": len(repo.list_experiments(session)),
     }
+
+
+# Per-family grouping of telemetry_raw columns for the /variables coverage view.
+_COVERAGE_FAMILIES: dict[str, tuple[str, ...]] = {
+    "A · Identificación": (
+        "device_hostname", "device_model", "serial_number", "fortios_version",
+        "vdom", "wan_interface",
+    ),
+    "B · Calidad de red": (
+        "latency_ms", "jitter_ms", "packet_loss_pct", "availability",
+        "link_status", "sla_status",
+    ),
+    "C · Tráfico WAN (crudo)": ("rx_bytes", "tx_bytes", "rx_packets", "tx_packets"),
+    "D · Tráfico WAN (derivado)": ("rx_bps", "tx_bps", "rx_mbps", "tx_mbps"),
+    "E · Utilización": ("interface_speed_mbps", "rx_utilization_pct", "tx_utilization_pct"),
+    "F · Errores": (
+        "rx_errors", "tx_errors", "rx_drops", "tx_drops",
+        "rx_error_rate", "tx_error_rate", "rx_drop_rate", "tx_drop_rate",
+    ),
+    "G · Recursos FortiGate": (
+        "cpu_pct", "memory_pct", "disk_pct", "uptime_seconds", "temperature_c",
+    ),
+    "H · Sesiones": (
+        "active_sessions", "new_sessions_per_second", "tcp_sessions", "udp_sessions",
+    ),
+    "I · Interfaz WAN": (
+        "interface_status", "interface_speed", "interface_duplex", "interface_mtu",
+        "default_route_present",
+    ),
+    "J · VPN": ("vpn_tunnels_up", "vpn_tunnels_down", "vpn_rx_bytes", "vpn_tx_bytes"),
+    "K · Adquisición": ("api_latency_ms", "collection_duration_ms", "collection_success"),
+}
+
+
+def variable_coverage(session: Session, data_source: str = DATA_SOURCE_REAL) -> dict[str, Any]:
+    """How many records hold a value for each variable, grouped by family."""
+    total = repo.count_raw(session, data_source)
+    first, last = repo.raw_time_bounds(session, data_source)
+
+    all_cols = [c for cols in _COVERAGE_FAMILIES.values() for c in cols]
+    if total:
+        stmt = select(
+            *[func.count(getattr(TelemetryRaw, c)).label(c) for c in all_cols]
+        ).where(TelemetryRaw.data_source == data_source)
+        counts = dict(session.execute(stmt).one()._mapping)
+    else:
+        counts = dict.fromkeys(all_cols, 0)
+
+    families = []
+    for family, cols in _COVERAGE_FAMILIES.items():
+        rows = [
+            {
+                "variable": c,
+                "records": int(counts.get(c, 0)),
+                "coverage_pct": round(counts.get(c, 0) / total * 100, 1) if total else 0.0,
+            }
+            for c in cols
+        ]
+        families.append(
+            {
+                "family": family,
+                "variables": rows,
+                "fully_covered": sum(1 for r in rows if r["records"] == total and total),
+                "unavailable": sum(1 for r in rows if r["records"] == 0),
+            }
+        )
+
+    return {
+        "data_source": data_source,
+        "total_observations": total,
+        "first_observation": first.isoformat() if first else None,
+        "last_observation": last.isoformat() if last else None,
+        "raw_variables": len(all_cols),
+        "families": families,
+        "related_tables": {
+            "telemetry_features": _count(session, TelemetryFeature, data_source),
+            "telemetry_sla": _count(session, TelemetrySla, data_source),
+            "probe_results": _count(session, ProbeResult, data_source),
+        },
+        "sla_by_label": _count_by_label(session, TelemetrySla, data_source),
+        "icmp_by_label": _count_by_label(session, ProbeResult, data_source),
+    }
+
+
+def _count(session: Session, model: Any, data_source: str) -> int:
+    stmt = select(func.count()).select_from(model)
+    if hasattr(model, "data_source"):
+        stmt = stmt.where(model.data_source == data_source)
+    return int(session.execute(stmt).scalar_one())
+
+
+def _count_by_label(session: Session, model: Any, data_source: str) -> list[dict[str, Any]]:
+    stmt = (
+        select(model.label, func.count().label("n"))
+        .where(model.data_source == data_source)
+        .group_by(model.label)
+        .order_by(model.label)
+    )
+    return [{"label": lbl, "records": int(n)} for lbl, n in session.execute(stmt)]
 
 
 def _raw_dataframe(session: Session, since, until, data_source: str) -> pd.DataFrame:

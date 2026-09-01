@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block heading %}Variables — cobertura del dataset{% endblock %}
+
+{% block content %}
+<section class="stat-grid">
+  <div class="stat"><span class="stat-label">Fuente</span><span class="stat-value" id="v-src">—</span></div>
+  <div class="stat"><span class="stat-label">Total observaciones (RAW)</span><span class="stat-value" id="v-total">—</span></div>
+  <div class="stat"><span class="stat-label">Variables RAW</span><span class="stat-value" id="v-nvars">—</span></div>
+  <div class="stat"><span class="stat-label">Primera observación</span><span class="stat-value" id="v-first">—</span></div>
+  <div class="stat"><span class="stat-label">Última observación</span><span class="stat-value" id="v-last">—</span></div>
+  <div class="stat"><span class="stat-label">Filas telemetry_features</span><span class="stat-value" id="v-feat">—</span></div>
+  <div class="stat"><span class="stat-label">Filas telemetry_sla</span><span class="stat-value" id="v-sla">—</span></div>
+  <div class="stat"><span class="stat-label">Filas probe_results (ICMP)</span><span class="stat-value" id="v-icmp">—</span></div>
+</section>
+
+<section class="panel">
+  <p class="muted">
+    "Registros" = nº de observaciones que contienen un valor para esa variable.
+    Cobertura 100 % = presente en todas las muestras. Cobertura 0 % = no disponible
+    en este equipo/firmware (queda igualmente en el esquema como NULL).
+  </p>
+  <div id="families"></div>
+</section>
+
+<section class="panel" id="labels-panel" hidden>
+  <h2>Por destino</h2>
+  <div class="table-wrap">
+    <table id="labels-table">
+      <thead><tr><th>Tabla</th><th>Destino</th><th>Registros</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener("DOMContentLoaded", async () => {
+  const d = await PNLApi.get("/api/dataset/coverage");
+  const set = (id, v) => document.getElementById(id).textContent = v ?? "—";
+  set("v-src", d.data_source);
+  set("v-total", d.total_observations.toLocaleString());
+  set("v-nvars", d.raw_variables);
+  set("v-first", PNLApi.fmtTime(d.first_observation));
+  set("v-last", PNLApi.fmtTime(d.last_observation));
+  set("v-feat", d.related_tables.telemetry_features.toLocaleString());
+  set("v-sla", d.related_tables.telemetry_sla.toLocaleString());
+  set("v-icmp", d.related_tables.probe_results.toLocaleString());
+
+  const total = d.total_observations || 1;
+  document.getElementById("families").innerHTML = d.families.map(f => `
+    <h2>${f.family}
+      <span class="muted" style="font-weight:400">
+        — ${f.fully_covered}/${f.variables.length} completas${f.unavailable ? `, ${f.unavailable} no disponibles` : ""}
+      </span>
+    </h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th style="width:38%">Variable</th><th style="width:18%">Registros</th><th>Cobertura</th></tr></thead>
+      <tbody>${f.variables.map(v => {
+        const pct = v.coverage_pct;
+        const color = pct >= 99.9 ? "var(--ok)" : pct === 0 ? "var(--border)" : "var(--warn)";
+        return `<tr>
+          <td>${v.variable}</td>
+          <td>${v.records.toLocaleString()} / ${total.toLocaleString()}</td>
+          <td>
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="flex:1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden">
+                <div style="width:${pct}%;height:100%;background:${color}"></div>
+              </div>
+              <span style="min-width:44px;text-align:right">${pct}%</span>
+            </div>
+          </td></tr>`;
+      }).join("")}</tbody>
+    </table></div>
+  `).join("");
+
+  const labelRows = [
+    ...d.sla_by_label.map(x => ({ t: "telemetry_sla", ...x })),
+    ...d.icmp_by_label.map(x => ({ t: "probe_results", ...x })),
+  ];
+  if (labelRows.length) {
+    document.getElementById("labels-panel").hidden = false;
+    document.querySelector("#labels-table tbody").innerHTML = labelRows.map(r =>
+      `<tr><td>${r.t}</td><td>${r.label}</td><td>${r.records.toLocaleString()}</td></tr>`).join("");
+  }
+});
+</script>
+{% endblock %}

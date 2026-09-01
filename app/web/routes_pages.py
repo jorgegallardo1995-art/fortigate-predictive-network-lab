@@ -43,6 +43,11 @@ def dataset(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "dataset.html", _base_context("dataset"))
 
 
+@router.get("/variables", response_class=HTMLResponse)
+def variables(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "variables.html", _base_context("variables"))
+
+
 @router.get("/events", response_class=HTMLResponse)
 def events(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "events.html", _base_context("events"))
