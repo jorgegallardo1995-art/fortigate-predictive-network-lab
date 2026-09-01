@@ -33,18 +33,29 @@ def _first(d: dict[str, Any], keys: tuple[str, ...]) -> Any:
     return None
 
 
-def _to_float(value: Any) -> float | None:
+def _to_float(value: Any, lo: float | None = None, hi: float | None = None) -> float | None:
+    """Coerce to float; return None for non-numbers or values outside [lo, hi].
+
+    FortiOS link-monitor occasionally emits garbage (huge integers) for a metric
+    in the first seconds after a monitor is (re)started - those must not enter the
+    dataset.
+    """
     try:
-        return None if value is None else round(float(value), 3)
+        f = None if value is None else round(float(value), 3)
     except (TypeError, ValueError):
         return None
+    if f is None:
+        return None
+    if (lo is not None and f < lo) or (hi is not None and f > hi):
+        return None
+    return f
 
 
 def _extract_metrics(node: dict[str, Any]) -> dict[str, Any]:
     return {
-        "latency_ms": _to_float(_first(node, _LATENCY_KEYS)),
-        "jitter_ms": _to_float(_first(node, _JITTER_KEYS)),
-        "packet_loss_pct": _to_float(_first(node, _LOSS_KEYS)),
+        "latency_ms": _to_float(_first(node, _LATENCY_KEYS), 0, 60_000),
+        "jitter_ms": _to_float(_first(node, _JITTER_KEYS), 0, 60_000),
+        "packet_loss_pct": _to_float(_first(node, _LOSS_KEYS), 0, 100),
         "sla_state": (_first(node, _STATE_KEYS) or None),
         "probe_sessions": _first(node, _SESSION_KEYS),
     }
