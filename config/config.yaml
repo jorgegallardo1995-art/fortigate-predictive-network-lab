@@ -19,6 +19,10 @@ collector:
   max_cycle_overrun_seconds: 55
   # Number of consecutive failed cycles before an API_ERROR event is raised.
   failure_event_threshold: 3
+  # Endpoints/metrics that are permanently unavailable on this device (FGT-50E,
+  # FortiOS 6.0.4: no temperature sensor, no SD-WAN Performance SLA). Their
+  # absence every cycle is a device limitation, NOT an incomplete record.
+  optional_missing: ["sensor_info", "sla_metrics"]
 
 # --- FortiGate WAN / device ------------------------------------------------
 device:

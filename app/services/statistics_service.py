@@ -41,11 +41,19 @@ def dataset_overview(session: Session, data_source: str = DATA_SOURCE_REAL) -> d
     lost = repo.total_lost_samples(session)
     completeness = round(min(100.0, total / expected * 100), 2) if expected else 0.0
 
-    incomplete = session.execute(
+    # Metrics that are permanently unavailable on THIS device/firmware (e.g. no
+    # temperature sensor, no SD-WAN Performance SLA) are expected to be "missing"
+    # every cycle - that is a device limitation, not an incomplete record.
+    optional = set(cfg.get("collector.optional_missing", ["sensor_info", "sla_metrics"]))
+    candidates = session.execute(
         select(TelemetryRaw)
         .where(TelemetryRaw.data_source == data_source)
         .where((TelemetryRaw.collection_success.is_(False)) | (TelemetryRaw.missing_data.isnot(None)))
     ).scalars().all()
+    incomplete = [
+        r for r in candidates
+        if not r.collection_success or (set(r.missing_data or []) - optional)
+    ]
 
     return {
         "data_source": data_source,

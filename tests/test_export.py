@@ -43,3 +43,18 @@ def test_dataset_overview_counts(session) -> None:
     ov = dataset_overview(session, DATA_SOURCE_REAL)
     assert ov["total_observations"] == 3
     assert ov["data_source"] == "REAL"
+
+
+def test_device_limitation_is_not_an_incomplete_record(session) -> None:
+    """Metrics permanently unavailable on the device (sensor_info, sla_metrics)
+    must not make every record 'incomplete'."""
+    now = utc_now()
+    _raw(session, now - timedelta(minutes=2), DATA_SOURCE_REAL,
+         missing_data=["sensor_info", "sla_metrics"])
+    _raw(session, now - timedelta(minutes=1), DATA_SOURCE_REAL,
+         missing_data=["sensor_info", "sla_metrics", "system_resource"])  # real gap
+    session.commit()
+
+    ov = dataset_overview(session, DATA_SOURCE_REAL)
+    assert ov["incomplete_records"] == 1  # only the one missing system_resource
+    assert ov["valid_records"] == 1
