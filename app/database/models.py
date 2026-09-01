@@ -31,7 +31,11 @@ from sqlalchemy import (
 )
 from sqlalchemy import DateTime as _SADateTime
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy.types import JSON
+from sqlalchemy.types import JSON as _JSON
+
+# Store Python ``None`` as SQL NULL (not the JSON string 'null'), so
+# ``col.isnot(None)`` and CSV exports behave as expected.
+JSON = _JSON(none_as_null=True)
 
 
 class DateTime(TypeDecorator):

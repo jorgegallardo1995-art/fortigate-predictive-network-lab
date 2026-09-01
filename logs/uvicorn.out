@@ -3164,3 +3164,25 @@
 2026-08-31T23:51:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:52:55 -04)" (scheduled at 2026-08-31 23:51:55.530951-04:00)
 2026-08-31T23:51:55-0400 | INFO     | collector                    | cycle ok  ts=03:51:55  latency=13.36 ms  rx=None Mbps  cpu=28.2%  (0 ms)
 2026-08-31T23:51:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:52:55 -04)" executed successfully
+2026-08-31T23:52:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:53:55 -04)" (scheduled at 2026-08-31 23:52:55.530951-04:00)
+2026-08-31T23:52:55-0400 | INFO     | apscheduler.executors.default | Running job "Feature engineering (trigger: interval[0:05:00], next run at: 2026-08-31 23:57:55 -04)" (scheduled at 2026-08-31 23:52:55.531036-04:00)
+2026-08-31T23:52:55-0400 | INFO     | collector                    | cycle ok  ts=03:52:55  latency=18.39 ms  rx=8812.204 Mbps  cpu=27.4%  (0 ms)
+2026-08-31T23:52:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:53:55 -04)" executed successfully
+2026-08-31T23:52:55-0400 | INFO     | scheduler                    | recomputed 254 feature rows
+2026-08-31T23:52:55-0400 | INFO     | apscheduler.executors.default | Job "Feature engineering (trigger: interval[0:05:00], next run at: 2026-08-31 23:57:55 -04)" executed successfully
+2026-08-31T23:53:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:54:55 -04)" (scheduled at 2026-08-31 23:53:55.530951-04:00)
+2026-08-31T23:53:55-0400 | INFO     | events                       | event FORTIGATE_RESTART [WARNING] FortiGate uptime dropped (2847046s -> 594216s)
+2026-08-31T23:53:55-0400 | INFO     | collector                    | cycle ok  ts=03:53:55  latency=13.83 ms  rx=None Mbps  cpu=27.4%  (0 ms)
+2026-08-31T23:53:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:54:55 -04)" executed successfully
+2026-08-31T23:54:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:55:55 -04)" (scheduled at 2026-08-31 23:54:55.530951-04:00)
+2026-08-31T23:54:55-0400 | INFO     | collector                    | cycle ok  ts=03:54:55  latency=18.73 ms  rx=7230.3405 Mbps  cpu=28.0%  (0 ms)
+2026-08-31T23:54:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:55:55 -04)" executed successfully
+2026-08-31T23:55:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:56:55 -04)" (scheduled at 2026-08-31 23:55:55.530951-04:00)
+2026-08-31T23:55:55-0400 | INFO     | events                       | event SLA_FAILED [CRITICAL] Performance SLA aggregate state -> down
+2026-08-31T23:55:55-0400 | INFO     | collector                    | cycle ok  ts=03:55:55  latency=72.72 ms  rx=None Mbps  cpu=46.3%  (0 ms)
+2026-08-31T23:55:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:56:55 -04)" executed successfully
+2026-08-31T23:56:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:57:55 -04)" (scheduled at 2026-08-31 23:56:55.530951-04:00)
+2026-08-31T23:56:55-0400 | INFO     | events                       | event SLA_RECOVERED [INFO] Performance SLA aggregate state -> up
+2026-08-31T23:56:55-0400 | INFO     | events                       | event FORTIGATE_RESTART [WARNING] FortiGate uptime dropped (3369980s -> 1399587s)
+2026-08-31T23:56:55-0400 | INFO     | collector                    | cycle ok  ts=03:56:55  latency=14.39 ms  rx=None Mbps  cpu=26.5%  (0 ms)
+2026-08-31T23:56:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:57:55 -04)" executed successfully
