@@ -52,11 +52,15 @@ sudo -u "$RUN_USER" "$APP_DIR/.venv/bin/pip" install --quiet -r "$APP_DIR/requir
 echo "==> [6/12] Preparing directories"
 if [[ ! -f "$APP_DIR/.env" ]]; then
   cp "$APP_DIR/.env.example" "$APP_DIR/.env"
+  # Production always serves on the LAN.
+  sed -i "s|^DASHBOARD_HOST=.*|DASHBOARD_HOST=0.0.0.0|" "$APP_DIR/.env"
   echo "   Created .env from template - EDIT IT before starting (host, token, MOCK_MODE=false, DATA_DIR)."
 fi
 # shellcheck disable=SC1091
 set -a; source "$APP_DIR/.env"; set +a
 DATA_DIR="${DATA_DIR:-$APP_DIR/data}"
+DASHBOARD_HOST="${DASHBOARD_HOST:-0.0.0.0}"
+DASHBOARD_PORT="${DASHBOARD_PORT:-8000}"
 [[ "$DATA_DIR" = /* ]] || DATA_DIR="$APP_DIR/$DATA_DIR"
 mkdir -p "$DATA_DIR/exports" "$DATA_DIR/backups" "$APP_DIR/logs"
 sudo -u "$RUN_USER" curl -fsSL -o "$APP_DIR/app/static/vendor/chart.umd.min.js" "$CHART_URL" \
@@ -76,6 +80,8 @@ echo "==> [9/12] Installing systemd unit"
 sed -e "s|__APP_DIR__|$APP_DIR|g" \
     -e "s|__DATA_DIR__|$DATA_DIR|g" \
     -e "s|__RUN_USER__|$RUN_USER|g" \
+    -e "s|__DASHBOARD_HOST__|$DASHBOARD_HOST|g" \
+    -e "s|__DASHBOARD_PORT__|$DASHBOARD_PORT|g" \
     "$APP_DIR/systemd/fortigate-collector.service" > "$SERVICE_FILE"
 systemctl daemon-reload
 

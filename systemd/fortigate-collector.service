@@ -14,7 +14,9 @@ User=__RUN_USER__
 Group=__RUN_USER__
 WorkingDirectory=__APP_DIR__
 EnvironmentFile=__APP_DIR__/.env
-ExecStart=__APP_DIR__/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-config /dev/null
+# The app configures its own logging (rotating file + console). --no-access-log
+# silences uvicorn's per-request lines; everything still goes to journald.
+ExecStart=__APP_DIR__/.venv/bin/uvicorn app.main:app --host __DASHBOARD_HOST__ --port __DASHBOARD_PORT__ --no-access-log
 ExecReload=/bin/kill -HUP $MAINPID
 
 Restart=always
