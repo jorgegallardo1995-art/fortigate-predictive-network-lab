@@ -3118,3 +3118,13 @@
 2026-08-31T23:40:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:41:55 -04)" (scheduled at 2026-08-31 23:40:55.530951-04:00)
 2026-08-31T23:40:55-0400 | INFO     | collector                    | cycle ok  ts=03:40:55  latency=19.02 ms  rx=2210.7606 Mbps  cpu=28.5%  (0 ms)
 2026-08-31T23:40:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:41:55 -04)" executed successfully
+2026-08-31T23:41:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:42:55 -04)" (scheduled at 2026-08-31 23:41:55.530951-04:00)
+2026-08-31T23:41:55-0400 | INFO     | events                       | event FORTIGATE_RESTART [WARNING] FortiGate uptime dropped (3381351s -> 431537s)
+2026-08-31T23:41:55-0400 | INFO     | collector                    | cycle ok  ts=03:41:55  latency=16.9 ms  rx=None Mbps  cpu=25.1%  (0 ms)
+2026-08-31T23:41:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:42:55 -04)" executed successfully
+2026-08-31T23:42:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:43:55 -04)" (scheduled at 2026-08-31 23:42:55.530951-04:00)
+2026-08-31T23:42:55-0400 | INFO     | apscheduler.executors.default | Running job "Feature engineering (trigger: interval[0:05:00], next run at: 2026-08-31 23:47:55 -04)" (scheduled at 2026-08-31 23:42:55.531036-04:00)
+2026-08-31T23:42:55-0400 | INFO     | collector                    | cycle ok  ts=03:42:55  latency=16.58 ms  rx=5208.3272 Mbps  cpu=24.6%  (0 ms)
+2026-08-31T23:42:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:43:55 -04)" executed successfully
+2026-08-31T23:42:55-0400 | INFO     | scheduler                    | recomputed 224 feature rows
+2026-08-31T23:42:55-0400 | INFO     | apscheduler.executors.default | Job "Feature engineering (trigger: interval[0:05:00], next run at: 2026-08-31 23:47:55 -04)" executed successfully

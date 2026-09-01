@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import math
 import random
+import time
 from typing import Any
 
 from app.collector.icmp_prober import ProbeReading
@@ -31,6 +32,10 @@ _FOS = "v7.4.4,build2662 (MOCK)"
 class MockSource:
     """Drop-in replacement for the FortiGate source, backed by an RNG."""
 
+    # Fixed epoch so mock uptime is monotonic across process restarts and never
+    # looks like a FortiGate reboot to the event detector.
+    _UPTIME_EPOCH = 1_733_000_000  # ~2024-12
+
     def __init__(self, seed: int | None = None) -> None:
         self._rng = random.Random(seed)
         self._rx_bytes = self._rng.randint(10**10, 10**11)
@@ -41,7 +46,7 @@ class MockSource:
         self._tx_errors = self._rng.randint(0, 50)
         self._rx_drops = self._rng.randint(0, 200)
         self._tx_drops = self._rng.randint(0, 200)
-        self._uptime = self._rng.randint(3 * 86400, 40 * 86400)
+        self._uptime = int(time.time()) - self._UPTIME_EPOCH
 
     def fetch(self, ctx: CycleContext) -> SourceSnapshot:
         now = ctx.scheduled_timestamp
