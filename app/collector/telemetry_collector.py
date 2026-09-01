@@ -29,7 +29,7 @@ from app.collector.mock_provider import MockSource
 from app.collector.sla_collector import aggregate, parse_health_check
 from app.core.config import get_config, get_settings
 from app.core.logging import get_logger
-from app.core.timeutils import duration_ms, to_local, utc_now
+from app.core.timeutils import duration_ms, to_local_naive, utc_now
 from app.core.version import COLLECTOR_VERSION, SCHEMA_VERSION
 from app.database import repositories as repo
 from app.database.database import session_scope
@@ -362,7 +362,7 @@ class TelemetryCollector:
             missing_data=snap.missing or None,
             error_message=snap.error,
             timestamp_utc=scheduled,
-            timestamp_local=to_local(scheduled),
+            timestamp_local=to_local_naive(scheduled),
             timezone=self.settings.timezone,
             device_hostname=ident.get("device_hostname"),
             device_model=ident.get("device_model"),

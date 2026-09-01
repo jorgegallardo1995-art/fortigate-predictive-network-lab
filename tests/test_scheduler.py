@@ -32,6 +32,29 @@ def test_mock_cycle_persists_row(session) -> None:
     assert repo.latest_sla(session, DATA_SOURCE_MOCK)  # SLA rows written
 
 
+def test_timestamp_local_is_wall_clock_not_utc(session) -> None:
+    """Regression: the UTC-normalising DateTime decorator must not collapse
+    timestamp_local back onto UTC."""
+    import os
+    from datetime import UTC, datetime
+
+    os.environ["TIMEZONE"] = "America/Santiago"
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        collector = TelemetryCollector()
+        collector.run_cycle(datetime(2026, 9, 1, 12, 0, 0, tzinfo=UTC))
+        collector.close()
+        last = repo.latest_raw(session, DATA_SOURCE_MOCK)
+        # Santiago is UTC-4 or UTC-3; local wall clock must differ from 12:00 UTC.
+        assert last.timestamp_local.hour in (8, 9)
+        assert last.timezone == "America/Santiago"
+    finally:
+        os.environ["TIMEZONE"] = "UTC"
+        get_settings.cache_clear()
+
+
 def test_two_cycles_derive_throughput(session) -> None:
     collector = TelemetryCollector()
     t0 = utc_now() - timedelta(seconds=60)

@@ -38,6 +38,9 @@ echo "==> [2/12] Checking Python"
 echo "==> [3/12] Installing system packages"
 apt-get update -qq
 apt-get install -y -qq python3-venv python3-dev build-essential sqlite3 iputils-ping curl
+# Timestamp integrity: keep the clock and make the collector wait for NTP on boot.
+systemctl enable --now systemd-timesyncd 2>/dev/null || true
+systemctl enable systemd-time-wait-sync 2>/dev/null || true
 
 # 4. virtualenv -------------------------------------------------------
 echo "==> [4/12] Creating virtual environment"
@@ -58,6 +61,8 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
 fi
 # shellcheck disable=SC1091
 set -a; source "$APP_DIR/.env"; set +a
+[ -n "${TIMEZONE:-}" ] && timedatectl set-timezone "$TIMEZONE" 2>/dev/null \
+  && echo "   System timezone set to $TIMEZONE" || true
 DATA_DIR="${DATA_DIR:-$APP_DIR/data}"
 DASHBOARD_HOST="${DASHBOARD_HOST:-0.0.0.0}"
 DASHBOARD_PORT="${DASHBOARD_PORT:-8000}"

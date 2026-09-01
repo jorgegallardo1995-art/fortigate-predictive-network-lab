@@ -24,10 +24,21 @@ def local_tz() -> ZoneInfo:
 
 
 def to_local(dt: datetime) -> datetime:
-    """Convert an aware ``datetime`` to the configured local timezone."""
+    """Convert an aware ``datetime`` to the configured local timezone (tz-aware)."""
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(local_tz())
+
+
+def to_local_naive(dt: datetime) -> datetime:
+    """Local wall-clock time as a NAIVE datetime.
+
+    Used for the secondary ``timestamp_local`` column: the DB layer normalises
+    every aware datetime to UTC on write, which would collapse a local timestamp
+    back onto UTC. Storing it naive preserves the wall-clock digits; the
+    accompanying ``timezone`` column records which zone they belong to.
+    """
+    return to_local(dt).replace(tzinfo=None)
 
 
 def isoformat_utc(dt: datetime) -> str:

@@ -5,8 +5,11 @@
 [Unit]
 Description=FortiGate Predictive Network Collector (Predictive Network Lab)
 Documentation=file:__APP_DIR__/README.md
-After=network-online.target
+After=network-online.target time-sync.target
 Wants=network-online.target
+# Best-effort: don't take the first sample until the clock is NTP-accurate.
+# (install_raspberry.sh enables systemd-time-wait-sync so this ordering has teeth.)
+After=systemd-time-wait-sync.service
 
 [Service]
 Type=simple

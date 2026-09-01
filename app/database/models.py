@@ -144,8 +144,11 @@ class TelemetryRaw(Base):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     # --- timestamps ---
+    # timestamp_utc is the primary scientific reference (tz-aware UTC).
     timestamp_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
-    timestamp_local: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # timestamp_local is a secondary convenience: naive wall-clock in `timezone`
+    # (stored naive so the UTC-normalising DateTime decorator does not collapse it).
+    timestamp_local: Mapped[datetime] = mapped_column(_SADateTime())
     timezone: Mapped[str] = mapped_column(String(64))
 
     # --- A. identification ---
