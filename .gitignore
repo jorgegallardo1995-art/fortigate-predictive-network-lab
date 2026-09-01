@@ -40,3 +40,6 @@ htmlcov/
 .vscode/
 .idea/
 {{*}}/
+
+# local dev server stdout
+logs/uvicorn.out
