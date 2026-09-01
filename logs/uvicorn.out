@@ -3128,3 +3128,15 @@
 2026-08-31T23:42:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:43:55 -04)" executed successfully
 2026-08-31T23:42:55-0400 | INFO     | scheduler                    | recomputed 224 feature rows
 2026-08-31T23:42:55-0400 | INFO     | apscheduler.executors.default | Job "Feature engineering (trigger: interval[0:05:00], next run at: 2026-08-31 23:47:55 -04)" executed successfully
+2026-08-31T23:43:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:44:55 -04)" (scheduled at 2026-08-31 23:43:55.530951-04:00)
+2026-08-31T23:43:55-0400 | INFO     | events                       | event FORTIGATE_RESTART [WARNING] FortiGate uptime dropped (2680040s -> 1886846s)
+2026-08-31T23:43:55-0400 | INFO     | collector                    | cycle ok  ts=03:43:55  latency=19.09 ms  rx=None Mbps  cpu=28.6%  (0 ms)
+2026-08-31T23:43:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:44:55 -04)" executed successfully
+2026-08-31T23:44:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:45:55 -04)" (scheduled at 2026-08-31 23:44:55.530951-04:00)
+2026-08-31T23:44:55-0400 | INFO     | events                       | event FORTIGATE_RESTART [WARNING] FortiGate uptime dropped (1886846s -> 1514770s)
+2026-08-31T23:44:55-0400 | INFO     | collector                    | cycle ok  ts=03:44:55  latency=20.68 ms  rx=4617.8603 Mbps  cpu=31.1%  (0 ms)
+2026-08-31T23:44:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:45:55 -04)" executed successfully
+2026-08-31T23:45:55-0400 | INFO     | apscheduler.executors.default | Running job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:46:55 -04)" (scheduled at 2026-08-31 23:45:55.530951-04:00)
+2026-08-31T23:45:55-0400 | INFO     | events                       | event FORTIGATE_RESTART [WARNING] FortiGate uptime dropped (1514770s -> 406966s)
+2026-08-31T23:45:55-0400 | INFO     | collector                    | cycle ok  ts=03:45:55  latency=17.45 ms  rx=1875.2741 Mbps  cpu=25.9%  (0 ms)
+2026-08-31T23:45:55-0400 | INFO     | apscheduler.executors.default | Job "Telemetry acquisition (trigger: interval[0:01:00], next run at: 2026-08-31 23:46:55 -04)" executed successfully

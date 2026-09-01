@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import platform
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -24,6 +25,24 @@ from app.services.feature_engineering import FEATURE_DEFINITIONS
 from app.services.statistics_service import dataset_overview
 
 logger = get_logger("research")
+
+
+def _describe_host() -> str:
+    """Best-effort description of the machine actually running the collector."""
+    machine = platform.machine().lower()
+    system = platform.system()
+    if system == "Linux" and machine in ("aarch64", "arm64", "armv7l", "armv6l"):
+        model_file = Path("/proc/device-tree/model")
+        if model_file.exists():
+            try:
+                model = model_file.read_text(errors="ignore").strip("\x00 \n")
+                if "raspberry pi" in model.lower():
+                    bits = "ARM64" if machine in ("aarch64", "arm64") else "ARM32"
+                    return f"{model} ({bits})"
+            except OSError:
+                pass
+        return f"Linux {machine}"
+    return f"{system} {machine} (development)"
 
 # The variables the collector attempts to obtain, grouped as in the thesis plan.
 REQUESTED_VARIABLES: dict[str, list[str]] = {
@@ -92,9 +111,7 @@ def build_research_metadata(session: Session) -> dict[str, Any]:
             "python_version": platform.python_version(),
             "os": f"{platform.system()} {platform.release()}",
             "hardware": f"{platform.machine()} ({platform.processor() or 'n/a'})",
-            "collector_architecture": (
-                "Raspberry Pi ARM64" if not settings.mock_mode else "development (macOS)"
-            ),
+            "collector_architecture": _describe_host(),
         },
         "device": {
             "model": last.device_model if last else None,
