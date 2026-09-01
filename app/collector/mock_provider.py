@@ -1,19 +1,24 @@
-"""Synthetic telemetry source for development on the Mac (``MOCK_MODE=true``).
+"""Synthetic telemetry source for development / demo (``MOCK_MODE=true``).
 
 Every observation it produces is tagged ``data_source=MOCK`` and must never enter
 a scientific export mixed with REAL data (the export layer enforces this).
 
-The generator models a plausible small-office WAN: diurnal traffic, slowly
-drifting latency with occasional spikes, correlated CPU/session load, and rare
-short "blips". It is only meant to exercise the dashboard, database, scheduler
-and feature pipeline - not to resemble any real failure process.
+The generator is a **pure function of the sample timestamp** - no accumulating
+instance state. This matters because the scheduler creates a fresh
+``TelemetryCollector`` (and therefore a fresh ``MockSource``) every cycle: any
+in-memory counter would jump between cycles and produce nonsensical throughput
+deltas. Deriving everything from wall-clock time keeps the cumulative counters
+strictly monotonic and the 60-second deltas realistic, and makes the mock series
+reproducible.
+
+It models a plausible small-office WAN (diurnal load, drifting latency, rare
+blips). It is not meant to resemble any real failure process.
 """
 
 from __future__ import annotations
 
 import math
 import random
-import time
 from typing import Any
 
 from app.collector.icmp_prober import ProbeReading
@@ -28,81 +33,92 @@ _HOSTNAME = "FGT50F-LAB-MOCK"
 _SERIAL = "FGT50FMOCK000001"
 _FOS = "v7.4.4,build2662 (MOCK)"
 
+# Fixed epoch (2024-12-01 UTC). Cumulative counters and uptime are measured from
+# here, so they only ever increase - across cycles and across process restarts.
+_EPOCH = 1_733_011_200
+_DAY = 86_400.0
+_W = 2 * math.pi / _DAY
+
+# Nominal average WAN throughput for the mock link (bytes/s).
+_AVG_RX_BPS = 42_000_000 / 8
+_AVG_TX_BPS = 16_000_000 / 8
+_AVG_PACKET_BYTES = 750
+
+
+def _diurnal(epoch: float) -> float:
+    """Smooth 0.4..1.3 load factor, peak ~15:00, trough ~03:00 (UTC-based shape)."""
+    return 1.0 + 0.45 * math.sin(_W * epoch - math.pi / 2) * 0.5 + 0.35 * math.sin(_W * epoch)
+
+
+def _cumulative_bytes(t: float, avg_bps: float) -> int:
+    """Analytic integral of a strictly-positive diurnal rate -> monotonic bytes."""
+    # rate(x) = avg_bps * (1 + 0.3 sin(_W x))  (always >= 0.7 avg_bps > 0)
+    integral = avg_bps * (t - (0.3 / _W) * math.cos(_W * t) + 0.3 / _W)
+    return max(0, int(integral))
+
 
 class MockSource:
-    """Drop-in replacement for the FortiGate source, backed by an RNG."""
-
-    # Fixed epoch so mock uptime is monotonic across process restarts and never
-    # looks like a FortiGate reboot to the event detector.
-    _UPTIME_EPOCH = 1_733_000_000  # ~2024-12
+    """Drop-in replacement for the FortiGate source. Stateless between cycles."""
 
     def __init__(self, seed: int | None = None) -> None:
-        self._rng = random.Random(seed)
-        self._rx_bytes = self._rng.randint(10**10, 10**11)
-        self._tx_bytes = self._rng.randint(10**10, 10**11)
-        self._rx_packets = self._rx_bytes // 800
-        self._tx_packets = self._tx_bytes // 800
-        self._rx_errors = self._rng.randint(0, 50)
-        self._tx_errors = self._rng.randint(0, 50)
-        self._rx_drops = self._rng.randint(0, 200)
-        self._tx_drops = self._rng.randint(0, 200)
-        self._uptime = int(time.time()) - self._UPTIME_EPOCH
+        self._extra_seed = seed or 0
+
+    def _rng(self, epoch: float) -> random.Random:
+        """Deterministic per-minute RNG so a given timestamp always yields the same sample."""
+        return random.Random(int(epoch // 60) + self._extra_seed)
 
     def fetch(self, ctx: CycleContext) -> SourceSnapshot:
         now = ctx.scheduled_timestamp
+        epoch = now.timestamp()
+        t = epoch - _EPOCH
+        rng = self._rng(epoch)
         local = to_local(now)
-        # Diurnal factor: peak around 15:00 local, trough around 04:00.
-        hour = local.hour + local.minute / 60.0
-        diurnal = 0.35 + 0.65 * max(0.0, math.sin((hour - 6) / 24 * 2 * math.pi) * 0.5 + 0.5)
-        jitter_noise = self._rng.gauss(0, 1)
-        blip = self._rng.random() < 0.01  # ~1% of samples get a transient spike
 
-        rx_mbps = max(0.2, diurnal * 90 * self._rng.uniform(0.8, 1.2))
-        tx_mbps = max(0.2, diurnal * 35 * self._rng.uniform(0.8, 1.2))
-        self._uptime += 60
-        self._rx_bytes += int(rx_mbps * 1e6 / 8 * 60)
-        self._tx_bytes += int(tx_mbps * 1e6 / 8 * 60)
-        self._rx_packets += int(rx_mbps * 1e6 / 8 * 60 / 750)
-        self._tx_packets += int(tx_mbps * 1e6 / 8 * 60 / 750)
-        if self._rng.random() < 0.05:
-            self._rx_drops += self._rng.randint(0, 3)
-        if self._rng.random() < 0.03:
-            self._rx_errors += self._rng.randint(0, 2)
+        load = _diurnal(epoch)
+        noise = rng.gauss(0, 1)
+        blip = rng.random() < 0.012  # ~1% of samples get a transient spike
 
-        base_latency = 14 + 6 * diurnal + 2.5 * jitter_noise + (55 if blip else 0)
-        latency = round(max(3.0, base_latency), 2)
-        jitter = round(max(0.2, 1.8 + 0.9 * abs(jitter_noise) + (12 if blip else 0)), 2)
-        loss = round(max(0.0, self._rng.gauss(0.05, 0.1) + (3.5 if blip else 0)), 3)
+        rx_bytes = _cumulative_bytes(t, _AVG_RX_BPS)
+        tx_bytes = _cumulative_bytes(t, _AVG_TX_BPS)
+        # small, slowly-growing error/drop counters (monotonic)
+        rx_drops = int(t / 3600 * 1.5) + (int(t // 60) % 3)
+        tx_drops = int(t / 3600 * 0.8)
+        rx_errors = int(t / 7200)
+        tx_errors = int(t / 9000)
 
-        cpu = round(min(99.0, 8 + 45 * diurnal + 4 * abs(jitter_noise) + (20 if blip else 0)), 1)
-        mem = round(min(99.0, 38 + 12 * diurnal + self._rng.uniform(-2, 2)), 1)
-        sessions = int(max(20, 300 * diurnal + self._rng.gauss(0, 40) + (500 if blip else 0)))
+        latency = round(max(3.0, 13 + 6 * (load - 1) + 2.5 * noise + (55 if blip else 0)), 2)
+        jitter = round(max(0.2, 1.8 + 0.9 * abs(noise) + (12 if blip else 0)), 2)
+        loss = round(max(0.0, rng.gauss(0.05, 0.1) + (3.5 if blip else 0)), 3)
+
+        cpu = round(min(99.0, 10 + 38 * (load - 0.4) + 4 * abs(noise) + (22 if blip else 0)), 1)
+        mem = round(min(99.0, 38 + 10 * (load - 1) + rng.uniform(-2, 2)), 1)
+        sessions = int(max(20, 320 * load + rng.gauss(0, 35) + (500 if blip else 0)))
 
         metrics: dict[str, Any] = {
-            "rx_bytes": self._rx_bytes,
-            "tx_bytes": self._tx_bytes,
-            "rx_packets": self._rx_packets,
-            "tx_packets": self._tx_packets,
-            "rx_errors": self._rx_errors,
-            "tx_errors": self._tx_errors,
-            "rx_drops": self._rx_drops,
-            "tx_drops": self._tx_drops,
+            "rx_bytes": rx_bytes,
+            "tx_bytes": tx_bytes,
+            "rx_packets": rx_bytes // _AVG_PACKET_BYTES,
+            "tx_packets": tx_bytes // _AVG_PACKET_BYTES,
+            "rx_errors": rx_errors,
+            "tx_errors": tx_errors,
+            "rx_drops": rx_drops,
+            "tx_drops": tx_drops,
             "cpu_pct": cpu,
             "memory_pct": mem,
             "disk_pct": None,  # 50F typically does not report disk
-            "uptime_seconds": self._uptime,
-            "temperature_c": round(self._rng.uniform(38, 52), 1),
+            "uptime_seconds": int(t),
+            "temperature_c": round(46 + 4 * (load - 1) + rng.uniform(-1.5, 1.5), 1),
             "active_sessions": sessions,
-            "new_sessions_per_second": round(max(0.0, self._rng.gauss(12, 4)), 2),
+            "new_sessions_per_second": round(max(0.0, 12 * load + rng.gauss(0, 3)), 2),
             "tcp_sessions": int(sessions * 0.7),
             "udp_sessions": int(sessions * 0.25),
             "interface_status": "up",
             "interface_speed": "1000full",
             "interface_duplex": "full",
             "interface_mtu": 1500,
-            "interface_speed_mbps": 1000.0,
+            "interface_speed_mbps": float(ctx.wan_speed_down_mbps or 1000.0),
             "link_status": "up",
-            "sla_status": "down" if blip and self._rng.random() > 0.5 else "up",
+            "sla_status": "down" if blip and rng.random() > 0.5 else "up",
             "availability": 100.0,
             "default_route_present": True,
             "latency_ms": latency,
@@ -110,24 +126,25 @@ class MockSource:
             "packet_loss_pct": loss,
         }
 
+        targets = ctx.sla_targets or {"HC_Mock": {"label": "mock", "target": "1.1.1.1"}}
         sla = [
             SlaReading(
                 health_check_name=name,
                 label=meta.get("label", name.lower()),
                 target=meta.get("target"),
-                latency_ms=round(latency + self._rng.uniform(-3, 6), 2),
-                jitter_ms=round(jitter + self._rng.uniform(-0.5, 1.5), 2),
-                packet_loss_pct=round(max(0.0, loss + self._rng.uniform(-0.05, 0.2)), 3),
-                sla_state="up" if not blip or self._rng.random() > 0.5 else "down",
-                probe_sessions=self._rng.randint(1, 5),
+                latency_ms=round(latency + rng.uniform(-3, 6), 2),
+                jitter_ms=round(max(0.1, jitter + rng.uniform(-0.5, 1.5)), 2),
+                packet_loss_pct=round(max(0.0, loss + rng.uniform(-0.05, 0.2)), 3),
+                sla_state="up" if not blip or rng.random() > 0.5 else "down",
+                probe_sessions=rng.randint(1, 5),
             )
-            for name, meta in (ctx.sla_targets or {"HC_Mock": {"label": "mock", "target": "1.1.1.1"}}).items()
+            for name, meta in targets.items()
         ]
 
         return SourceSnapshot(
             data_source="MOCK",
             success=True,
-            api_latency_ms=round(self._rng.uniform(15, 60), 1),
+            api_latency_ms=round(rng.uniform(15, 60), 1),
             identification={
                 "device_hostname": _HOSTNAME,
                 "device_model": _MODEL,
@@ -137,15 +154,16 @@ class MockSource:
             },
             metrics=metrics,
             sla=sla,
-            raw_json={"mock": True, "diurnal_factor": round(diurnal, 3), "blip": blip},
+            raw_json={"mock": True, "load_factor": round(load, 3), "blip": blip},
         )
 
     def probe_icmp(self, ctx: CycleContext) -> list[ProbeReading]:
         """Fake ICMP results consistent with the mock latency."""
-        base = self._rng.uniform(10, 25)
+        rng = self._rng(ctx.scheduled_timestamp.timestamp())
+        base = 12 + 8 * (_diurnal(ctx.scheduled_timestamp.timestamp()) - 1)
         out: list[ProbeReading] = []
         for name, meta in (ctx.sla_targets or {}).items():
-            avg = round(base + self._rng.uniform(-4, 8), 2)
+            avg = round(max(1.0, base + rng.uniform(-4, 8)), 2)
             out.append(
                 ProbeReading(
                     label=meta.get("label", name.lower()),
@@ -153,10 +171,10 @@ class MockSource:
                     packets_sent=5,
                     packets_received=5,
                     packet_loss_pct=0.0,
-                    rtt_min_ms=round(avg - 2, 2),
+                    rtt_min_ms=round(max(0.5, avg - 2), 2),
                     rtt_avg_ms=avg,
                     rtt_max_ms=round(avg + 3, 2),
-                    rtt_mdev_ms=round(self._rng.uniform(0.3, 2.0), 2),
+                    rtt_mdev_ms=round(rng.uniform(0.3, 2.0), 2),
                     success=True,
                 )
             )
