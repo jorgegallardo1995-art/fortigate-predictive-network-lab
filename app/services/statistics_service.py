@@ -35,8 +35,11 @@ def dataset_overview(session: Session, data_source: str = DATA_SOURCE_REAL) -> d
 
     days = round((last - first).total_seconds() / 86400, 2) if first and last else 0
     expected = expected_samples_between(first, last, interval) if first and last else 0
+    # The collector fires one sample immediately on startup, so short runs can hold
+    # slightly more rows than the strict interval grid predicts. Clamp the ratio.
+    expected = max(expected, total)
     lost = repo.total_lost_samples(session)
-    completeness = round(total / expected * 100, 2) if expected else 0.0
+    completeness = round(min(100.0, total / expected * 100), 2) if expected else 0.0
 
     incomplete = session.execute(
         select(TelemetryRaw)
