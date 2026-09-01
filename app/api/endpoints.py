@@ -33,6 +33,8 @@ DEFAULT_ENDPOINTS: dict[str, str] = {
     # SD-WAN / performance SLA
     "sdwan_health_check": "monitor/virtual-wan/health-check",
     "sdwan_members": "monitor/virtual-wan/members",
+    # link-monitor: same measurements without SD-WAN membership / routing impact
+    "link_monitor": "monitor/system/link-monitor",
 }
 
 # Human-readable notes used by the probe script and the /research page.
@@ -50,6 +52,7 @@ ENDPOINT_NOTES: dict[str, str] = {
     "router_ipv4": "active routing table (default-route presence => WAN reachable)",
     "sdwan_health_check": "Performance SLA results: latency, jitter, packet loss, state",
     "sdwan_members": "SD-WAN member interface status",
+    "link_monitor": "link-monitor probe results: latency, jitter, packet loss, status",
 }
 
 

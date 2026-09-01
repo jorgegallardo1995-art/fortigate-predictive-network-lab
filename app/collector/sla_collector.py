@@ -95,6 +95,54 @@ def parse_health_check(
     return readings
 
 
+def parse_link_monitor(
+    results: dict[str, Any], target_map: dict[str, dict[str, str]], wan_interface: str
+) -> list[SlaReading]:
+    """Parse ``monitor/system/link-monitor`` (an alternative to SD-WAN health-check
+    that needs no SD-WAN membership and never touches routing).
+
+    Shape varies by build; commonly ``{name: {server_ip: {latency, jitter,
+    packet_loss/packetloss, status/state, ...}}}`` or ``{name: {latency, ...}}``.
+    """
+    readings: list[SlaReading] = []
+    if not isinstance(results, dict):
+        return readings
+
+    for name, data in results.items():
+        if not isinstance(data, dict):
+            continue
+        mapping = target_map.get(name, {})
+        label = mapping.get("label", name.lower())
+        target = mapping.get("target")
+
+        # Per-server sub-dicts? average them; otherwise treat `data` as the node.
+        servers = {k: v for k, v in data.items() if isinstance(v, dict) and _looks_like_metrics(v)}
+        nodes = list(servers.values()) if servers else [data]
+        per = [_extract_metrics(n) for n in nodes]
+        lat = [m["latency_ms"] for m in per if m["latency_ms"] is not None]
+        jit = [m["jitter_ms"] for m in per if m["jitter_ms"] is not None]
+        loss = [m["packet_loss_pct"] for m in per if m["packet_loss_pct"] is not None]
+        states = [str(m["sla_state"]).lower() for m in per if m["sla_state"]]
+
+        readings.append(
+            SlaReading(
+                health_check_name=name,
+                label=label,
+                target=target or (next(iter(servers)) if servers else None),
+                latency_ms=round(sum(lat) / len(lat), 3) if lat else None,
+                jitter_ms=round(sum(jit) / len(jit), 3) if jit else None,
+                packet_loss_pct=round(sum(loss) / len(loss), 3) if loss else None,
+                sla_state=("up" if any(s in ("up", "alive", "1", "true") for s in states) else "down")
+                if states else None,
+            )
+        )
+    return readings
+
+
+def _looks_like_metrics(node: dict[str, Any]) -> bool:
+    return any(k in node for k in (*_LATENCY_KEYS, *_LOSS_KEYS, "status", "state"))
+
+
 def aggregate(readings: list[SlaReading]) -> dict[str, Any]:
     """Collapse per-target SLA readings into the aggregate columns of ``telemetry_raw``."""
     lat = [r.latency_ms for r in readings if r.latency_ms is not None]

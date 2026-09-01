@@ -26,7 +26,7 @@ from app.api.fortigate_client import (
 )
 from app.collector.icmp_prober import IcmpProber, ProbeReading
 from app.collector.mock_provider import MockSource
-from app.collector.sla_collector import aggregate, parse_health_check
+from app.collector.sla_collector import aggregate, parse_health_check, parse_link_monitor
 from app.core.config import get_config, get_settings
 from app.core.logging import get_logger
 from app.core.timeutils import duration_ms, to_local_naive, utc_now
@@ -79,6 +79,7 @@ class FortiGateSource:
             iface_cfg = _try("cmdb_interface", lambda: self.client.get_cmdb_interface(ctx.wan_interface))
             routes = _try("router_ipv4", self.client.get_router_ipv4)
             health = _try("sdwan_health_check", self.client.get_sdwan_health_check)
+            link_mon = _try("link_monitor", self.client.get_link_monitor)
             sensors = _try("sensor_info", self.client.get_sensor_info)
             firmware = _try("firmware", self.client.get_firmware)
             cfg_global = _try("cmdb_global", self.client.get_cmdb_global)
@@ -117,6 +118,9 @@ class FortiGateSource:
         sla_readings: list[SlaReading] = []
         if isinstance(health, dict) and health:
             sla_readings = parse_health_check(health, ctx.sla_targets, ctx.wan_interface)
+        elif isinstance(link_mon, dict) and link_mon:
+            sla_readings = parse_link_monitor(link_mon, ctx.sla_targets, ctx.wan_interface)
+        if sla_readings:
             m.update(aggregate(sla_readings))
         else:
             snap.missing.append("sla_metrics")

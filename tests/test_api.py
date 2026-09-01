@@ -97,6 +97,23 @@ def test_test_connection_reports_auth_failure() -> None:
     assert info["authenticated"] is False
 
 
+def test_parse_link_monitor_nested_servers() -> None:
+    from app.collector.sla_collector import parse_link_monitor
+
+    results = {
+        "Google": {
+            "8.8.8.8": {"status": "alive", "latency": 7.2, "jitter": 0.3, "packet_loss": 0.0},
+            "8.8.4.4": {"status": "alive", "latency": 7.8, "jitter": 0.5, "packet_loss": 0.0},
+        }
+    }
+    readings = parse_link_monitor(results, {"Google": {"label": "google", "target": "8.8.8.8"}}, "wan1")
+    assert len(readings) == 1
+    r = readings[0]
+    assert r.label == "google"
+    assert 7.4 < r.latency_ms < 7.6
+    assert r.sla_state == "up"
+
+
 def test_client_has_no_write_methods() -> None:
     """Guard: the client must never expose a way to modify the FortiGate."""
     for verb in ("post", "put", "delete", "patch"):

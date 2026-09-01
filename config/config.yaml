@@ -48,6 +48,7 @@ fortios_endpoints:
   sensor_info:          "monitor/system/sensor-info"
   sdwan_health_check:   "monitor/virtual-wan/health-check"
   sdwan_members:        "monitor/virtual-wan/members"
+  link_monitor:         "monitor/system/link-monitor"   # alternativa sin SD-WAN
   cmdb_interface:       "cmdb/system/interface"
   cmdb_global:          "cmdb/system/global"
   firmware:             "monitor/system/firmware"

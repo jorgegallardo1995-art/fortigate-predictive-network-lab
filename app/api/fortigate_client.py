@@ -269,6 +269,11 @@ class FortiGateClient:
         resp = self.get("sdwan_health_check")
         return resp.results if isinstance(resp.results, dict) else {}
 
+    def get_link_monitor(self) -> dict[str, Any]:
+        """link-monitor probe results keyed by monitor name."""
+        resp = self.get("link_monitor")
+        return resp.results if isinstance(resp.results, dict) else {}
+
     def get_sensor_info(self) -> list[dict[str, Any]]:
         resp = self.get("sensor_info")
         return resp.results if isinstance(resp.results, list) else []
