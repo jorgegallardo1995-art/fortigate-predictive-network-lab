@@ -54,16 +54,16 @@ fortios_endpoints:
   time:                 "monitor/system/time"
 
 # --- Performance SLA mapping ------------------------------------------------
-# Maps the FortiGate health-check NAME (left) to a friendly label + target.
-# NOTE: the current device (FGT-50E, FortiOS 6.0.4) has NO SD-WAN / Performance
-# SLA configured, so virtual-wan/health-check returns nothing and the aggregate
-# latency/jitter/loss are filled from the Pi's ICMP prober instead (see below).
-# When you configure SD-WAN health-checks, put their exact names here.
+# Maps the FortiGate health-check NAME (left, exact) to a friendly label + target.
+# These names must match the Performance SLA entries created on the FortiGate
+# (SD-WAN > Performance SLA). Until they exist, virtual-wan/health-check returns
+# nothing and the aggregate latency/jitter/loss are filled from the Pi's ICMP
+# prober instead. Once they report data, telemetry_sla is populated per target.
 sla_targets:
-  HC_Cloudflare: { label: "cloudflare", target: "1.1.1.1" }
-  HC_Google:     { label: "google",     target: "8.8.8.8" }
-  HC_Quad9:      { label: "quad9",       target: "9.9.9.9" }
-  # HC_University: { label: "university", target: "changeme.duoc.cl" }
+  Cloudflare: { label: "cloudflare", target: "1.1.1.1" }
+  Google:     { label: "google",     target: "8.8.8.8" }
+  Quad9:      { label: "quad9",       target: "9.9.9.9" }
+  # DUOC:     { label: "duoc",        target: "changeme.duoc.cl" }
 
 # --- ICMP prober (runs on the Raspberry Pi, independent cross-check) ---------
 icmp_prober:
