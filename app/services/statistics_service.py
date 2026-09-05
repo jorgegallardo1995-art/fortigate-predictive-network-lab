@@ -51,15 +51,17 @@ def dataset_overview(session: Session, data_source: str = DATA_SOURCE_REAL) -> d
     # temperature sensor, no SD-WAN Performance SLA) are expected to be "missing"
     # every cycle - that is a device limitation, not an incomplete record.
     optional = set(cfg.get("collector.optional_missing", ["sensor_info", "sla_metrics"]))
+    # Only pull the two columns needed - loading full rows (incl. the raw_json
+    # blob) here made this endpoint time out once the dataset grew.
     candidates = session.execute(
-        select(TelemetryRaw)
+        select(TelemetryRaw.collection_success, TelemetryRaw.missing_data)
         .where(TelemetryRaw.data_source == data_source)
         .where((TelemetryRaw.collection_success.is_(False)) | (TelemetryRaw.missing_data.isnot(None)))
-    ).scalars().all()
-    incomplete = [
-        r for r in candidates
-        if not r.collection_success or (set(r.missing_data or []) - optional)
-    ]
+    ).all()
+    incomplete_count = sum(
+        1 for success, missing in candidates
+        if not success or (set(missing or []) - optional)
+    )
 
     return {
         "data_source": data_source,
@@ -72,8 +74,8 @@ def dataset_overview(session: Session, data_source: str = DATA_SOURCE_REAL) -> d
         "real_samples": total,
         "lost_samples": lost,
         "completeness_pct": completeness,
-        "valid_records": total - len(incomplete),
-        "incomplete_records": len(incomplete),
+        "valid_records": total - incomplete_count,
+        "incomplete_records": incomplete_count,
         "gaps": summarise_gaps(session),
         "events_total": repo.count_events_since(session, first) if first else 0,
         "experiments_total": len(repo.list_experiments(session)),

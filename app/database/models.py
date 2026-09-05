@@ -225,7 +225,10 @@ class TelemetryRaw(Base):
     vpn_tx_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
 
     # --- full API snapshot for traceability ---
-    raw_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Deferred: a multi-KB JSON blob per row. Never loaded by ORM queries unless
+    # asked for explicitly, so dashboard/stats queries stay fast as the dataset
+    # grows. The CSV export reads it via a Core select and drops the column.
+    raw_json: Mapped[dict | None] = mapped_column(JSON, nullable=True, deferred=True)
 
     # --- ML labelling (always NULL on write) ---
     label: Mapped[int | None] = mapped_column(Integer, nullable=True)
