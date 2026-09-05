@@ -41,6 +41,10 @@ apt-get install -y -qq python3-venv python3-dev build-essential sqlite3 iputils-
 # Timestamp integrity: keep the clock and make the collector wait for NTP on boot.
 systemctl enable --now systemd-timesyncd 2>/dev/null || true
 systemctl enable systemd-time-wait-sync 2>/dev/null || true
+# Persistent journal so boot history survives reboots (gap classification uses it).
+mkdir -p /var/log/journal
+systemd-tmpfiles --create --prefix /var/log/journal 2>/dev/null || true
+systemctl restart systemd-journald 2>/dev/null || true
 
 # 4. virtualenv -------------------------------------------------------
 echo "==> [4/12] Creating virtual environment"

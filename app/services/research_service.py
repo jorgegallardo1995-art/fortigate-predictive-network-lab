@@ -138,6 +138,7 @@ def build_research_metadata(session: Session) -> dict[str, Any]:
             "gaps": overview["gaps"],
             "experiments_total": overview["experiments_total"],
         },
+        "availability": _availability_block(session, data_source),
         "variables": {
             "requested": REQUESTED_VARIABLES,
             "available": sorted(available),
@@ -146,6 +147,28 @@ def build_research_metadata(session: Session) -> dict[str, Any]:
             "derived_features": FEATURE_DEFINITIONS,
         },
         "notes": "Dashboard thresholds are visual only and are NOT used to label the dataset.",
+    }
+
+
+def _availability_block(session: Session, data_source: str) -> dict[str, Any]:
+    """Continuity-of-service KPIs from the availability timeline (may be empty)."""
+    from app.services.availability_service import summary as av_summary
+
+    s = av_summary(session, data_source)
+    if not s.get("total_slots"):
+        return {"timeline_built": False}
+    return {
+        "timeline_built": True,
+        "slot_minutes": s["slot_minutes"],
+        "total_slots": s["total_slots"],
+        "collector_availability_pct": s["collector_availability_pct"],
+        "collector_downtime_minutes": s["collector_downtime_minutes"],
+        "network_availability_pct": s["network_availability_pct"],
+        "network_downtime_minutes": s["network_downtime_minutes"],
+        "downtime_by_reason_minutes": {
+            k: round(v * s["slot_minutes"], 1) for k, v in s["down_by_reason"].items()
+        },
+        "outages": s["outages"],
     }
 
 

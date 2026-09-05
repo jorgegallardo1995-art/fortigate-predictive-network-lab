@@ -181,16 +181,43 @@ def get_events(
 def get_gaps(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     return [
         {
+            "id": g.id,
             "gap_start": g.gap_start.isoformat(),
             "gap_end": g.gap_end.isoformat(),
             "duration_seconds": g.duration_seconds,
             "expected_samples": g.expected_samples,
             "lost_samples": g.lost_samples,
             "reason": g.reason,
+            "host_rebooted": g.host_rebooted,
             "notes": g.notes,
         }
         for g in repo.all_gaps(session)
     ]
+
+
+class GapReasonIn(BaseModel):
+    reason: str
+    notes: str | None = None
+
+
+@router.patch("/gaps/{gap_id}")
+def set_gap_reason(gap_id: int, payload: GapReasonIn) -> dict[str, Any]:
+    """Manually correct a gap's cause (e.g. mark a known power outage the host
+    could not self-detect). Rebuilds the availability timeline afterwards."""
+    from app.database.models import GAP_REASONS, CollectionGap
+    from app.services.availability_service import rebuild_all
+
+    if payload.reason not in GAP_REASONS:
+        raise HTTPException(422, f"reason must be one of {list(GAP_REASONS)}")
+    with session_scope() as session:
+        gap = session.get(CollectionGap, gap_id)
+        if gap is None:
+            raise HTTPException(404, "gap not found")
+        gap.reason = payload.reason
+        if payload.notes:
+            gap.notes = f"{gap.notes or ''} | manual: {payload.notes}".strip(" |")
+    rebuild_all(full=True)
+    return {"id": gap_id, "reason": payload.reason}
 
 
 # --- experiments -----------------------------------------------------
