@@ -26,12 +26,20 @@
       </label>
       <a class="btn" href="#" data-export="raw">RAW CSV</a>
       <a class="btn" href="#" data-export="features">FEATURES CSV</a>
+      <a class="btn" href="#" data-export="availability">AVAILABILITY CSV</a>
       <a class="btn" href="#" data-export="events">EVENTS CSV</a>
-      <a class="btn" href="#" data-export="experiments">EXPERIMENTS CSV</a>
       <a class="btn" href="#" data-export="gaps">GAPS CSV</a>
+      <a class="btn" href="#" data-export="experiments">EXPERIMENTS CSV</a>
+      <a class="btn" href="#" data-export="icmp">ICMP CSV</a>
       <a class="btn" href="#" data-export="dictionary">DATA DICTIONARY</a>
     </div>
   </div>
+  <div class="panel-head" style="margin-top:12px">
+    <h2>Informe técnico</h2>
+    <a class="btn" id="report-btn" href="#">📄 Descargar informe técnico (PDF)</a>
+  </div>
+  <p class="muted">Resumen completo del dataset — todas las variables, cobertura, estadísticos,
+    features derivadas y guía para armar el modelo LSTM. Pensado para adjuntar junto a los CSV.</p>
 </section>
 
 <section class="panel">
@@ -75,6 +83,20 @@ document.addEventListener("DOMContentLoaded", async () => {
     e.preventDefault();
     window.location = `/api/export/${a.dataset.export}?data_source=${src.value}&download=true`;
   }));
+
+  const rb = document.getElementById("report-btn");
+  rb.addEventListener("click", e => {
+    e.preventDefault();
+    rb.textContent = "Generando PDF…";
+    const url = `/api/report/technical.pdf?data_source=${src.value}`;
+    fetch(url).then(r => r.blob()).then(b => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(b);
+      a.download = `informe_tecnico_${src.value.toLowerCase()}.pdf`;
+      a.click();
+      rb.textContent = "📄 Descargar informe técnico (PDF)";
+    }).catch(() => { rb.textContent = "Error al generar — reintentar"; });
+  });
 });
 </script>
 {% endblock %}

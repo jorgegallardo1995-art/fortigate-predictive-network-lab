@@ -153,6 +153,16 @@ def availability_rebuild(full: bool = False) -> dict[str, Any]:
     return {"slots_written": availability_service.rebuild_all(full=full)}
 
 
+# --- technical report -----------------------------------------------------
+@router.get("/report/technical.pdf")
+def technical_report(data_source: str | None = None) -> Any:
+    """Full dataset briefing (variables, stats, features, availability, LSTM guide)."""
+    from app.services.report_service import build_technical_report
+
+    path = build_technical_report(data_source)
+    return FileResponse(path, media_type="application/pdf", filename=path.name)
+
+
 # --- events / gaps ----------------------------------------------------
 @router.get("/events")
 def get_events(

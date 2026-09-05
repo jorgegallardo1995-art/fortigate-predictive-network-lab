@@ -58,3 +58,21 @@ def test_device_limitation_is_not_an_incomplete_record(session) -> None:
     ov = dataset_overview(session, DATA_SOURCE_REAL)
     assert ov["incomplete_records"] == 1  # only the one missing system_resource
     assert ov["valid_records"] == 1
+
+
+def test_technical_report_pdf_builds(session) -> None:
+    from datetime import timedelta as _td
+
+    from app.services import availability_service
+    from app.services.report_service import build_technical_report
+
+    now = utc_now()
+    for i in range(6):
+        _raw(session, now - _td(minutes=i), DATA_SOURCE_REAL, latency_ms=10.0 + i, cpu_pct=20.0)
+    session.commit()
+    availability_service.rebuild_all(full=True)
+
+    path = build_technical_report(DATA_SOURCE_REAL)
+    assert path.exists()
+    assert path.read_bytes()[:5] == b"%PDF-"
+    assert path.stat().st_size > 3000
