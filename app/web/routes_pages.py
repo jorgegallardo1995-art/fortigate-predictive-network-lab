@@ -48,6 +48,11 @@ def variables(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "variables.html", _base_context("variables"))
 
 
+@router.get("/availability", response_class=HTMLResponse)
+def availability(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "availability.html", _base_context("availability"))
+
+
 @router.get("/events", response_class=HTMLResponse)
 def events(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "events.html", _base_context("events"))

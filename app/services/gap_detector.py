@@ -9,15 +9,17 @@ missing samples simply do not exist.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_config
+from app.core.hostinfo import host_boot_time
 from app.core.logging import get_logger
 from app.core.timeutils import utc_now
 from app.database import repositories as repo
-from app.database.models import CollectionGap, TelemetryRaw
+from app.database.models import CollectionGap, NetworkEvent, TelemetryRaw
 
 logger = get_logger("gap_detector")
 
@@ -45,33 +47,66 @@ class GapDetector:
             return None
 
         expected = max(1, round(elapsed / self.interval) - 1)
+        boot = host_boot_time()
+        rebooted = bool(
+            boot
+            and previous.timestamp_utc < boot <= current.timestamp_utc + timedelta(seconds=self.interval)
+        )
+        reason = self._infer_reason(session, previous, current, elapsed, rebooted)
         gap = CollectionGap(
             gap_start=previous.timestamp_utc,
             gap_end=current.timestamp_utc,
             duration_seconds=round(elapsed, 1),
             expected_samples=expected,
             lost_samples=expected,
-            reason=self._infer_reason(previous, current, elapsed),
+            reason=reason,
+            host_rebooted=rebooted if boot is not None else None,
+            host_boot_time=boot if rebooted else None,
             detected_at=utc_now(),
             notes=f"gap of {elapsed:.0f}s between consecutive samples "
-            f"(interval={self.interval}s, tolerance={self.tolerance}s)",
+            f"(interval={self.interval}s, tolerance={self.tolerance}s); "
+            f"host_rebooted={rebooted}",
         )
         repo.add_gap(session, gap)
         logger.warning(
-            "GAP detected: %.0fs, ~%d samples lost, reason=%s", elapsed, expected, gap.reason
+            "GAP detected: %.0fs, ~%d samples lost, reason=%s (host_rebooted=%s)",
+            elapsed, expected, gap.reason, rebooted,
         )
         return gap
 
     def _infer_reason(
-        self, previous: TelemetryRaw, current: TelemetryRaw, elapsed: float
+        self,
+        session: Session,
+        previous: TelemetryRaw,
+        current: TelemetryRaw,
+        elapsed: float,
+        host_rebooted: bool,
     ) -> str:
-        # FortiGate uptime went backwards -> the device rebooted.
+        # 1. The collector HOST went down/rebooted during the gap.
+        if host_rebooted:
+            # A COLLECTOR_STOPPED event right before the gap => a deliberate
+            # stop/restart (a deploy, a manual reboot); otherwise a power loss.
+            window_start = previous.timestamp_utc - timedelta(seconds=120)
+            stopped = session.execute(
+                select(NetworkEvent.id)
+                .where(
+                    NetworkEvent.event_type == "COLLECTOR_STOPPED",
+                    NetworkEvent.timestamp_utc >= window_start,
+                    NetworkEvent.timestamp_utc <= current.timestamp_utc,
+                )
+                .limit(1)
+            ).first()
+            return "SYSTEM_REBOOT" if stopped else "POWER_FAILURE"
+
+        # 2. FortiGate rebooted (uptime went backwards) - if the API exposes it.
         if (
             previous.uptime_seconds is not None
             and current.uptime_seconds is not None
             and current.uptime_seconds < previous.uptime_seconds
         ):
-            return "SYSTEM_REBOOT"
+            return "FORTIGATE_UNREACHABLE"
+
+        # 3. Host stayed up -> the acquisition failed, not the machine.
         if not current.collection_success:
             err = (current.error_message or "").lower()
             if "unreach" in err or "connect" in err or "timeout" in err:
@@ -79,9 +114,7 @@ class GapDetector:
             if "auth" in err:
                 return "API_FAILURE"
             return "COLLECTOR_FAILURE"
-        # Long gap but the next sample succeeded and the box did not reboot:
-        # most likely the collector process (or the Pi) was down.
-        if elapsed > 5 * self.interval:
+        if elapsed > 3 * self.interval:
             return "COLLECTOR_FAILURE"
         return "UNKNOWN"
 

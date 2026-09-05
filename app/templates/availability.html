@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block heading %}Disponibilidad — continuidad operativa{% endblock %}
+
+{% block content %}
+<section class="chart-controls">
+  <label>Ventana:
+    <select id="av-range">
+      <option value="24h">24 h</option>
+      <option value="7d">7 días</option>
+      <option value="30d">30 días</option>
+      <option value="all" selected>Todo el dataset</option>
+    </select>
+  </label>
+  <a class="btn" href="/api/export/availability?download=true">Exportar CSV continuo</a>
+  <span class="muted" id="av-note"></span>
+</section>
+
+<section class="kpi-row">
+  <div class="kpi" id="k-collector"><span class="kpi-label">Disponibilidad collector</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="k-network"><span class="kpi-label">Disponibilidad red (medida)</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="k-down"><span class="kpi-label">Tiempo sin captura</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="k-netdown"><span class="kpi-label">Tiempo red caída (medido)</span><span class="kpi-value">—</span></div>
+</section>
+
+<section class="panel">
+  <h2>Línea de tiempo</h2>
+  <div id="av-strip" class="av-strip"></div>
+  <div class="av-legend">
+    <span><i class="sw up"></i> red OK</span>
+    <span><i class="sw degraded"></i> collector OK, red degradada</span>
+    <span><i class="sw down"></i> sin captura</span>
+  </div>
+</section>
+
+<section class="stat-grid" id="av-grid"></section>
+
+<section class="panel">
+  <h2>Cortes de disponibilidad</h2>
+  <div class="table-wrap">
+    <table id="av-outages">
+      <thead><tr><th>Inicio</th><th>Fin</th><th>Duración</th><th>Causa</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<style>
+  .av-strip { display: flex; height: 34px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
+  .av-strip > div { height: 100%; }
+  .av-strip .up { background: var(--ok); }
+  .av-strip .degraded { background: var(--warn); }
+  .av-strip .down { background: var(--bad); }
+  .av-legend { display: flex; gap: 18px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  .av-legend .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; vertical-align: middle; margin-right: 4px; }
+  .av-legend .sw.up { background: var(--ok); } .av-legend .sw.degraded { background: var(--warn); } .av-legend .sw.down { background: var(--bad); }
+  tr.r-power_failure td, tr.r-system_reboot td { color: var(--bad); }
+</style>
+<script>
+async function load() {
+  const range = document.getElementById("av-range").value;
+  const [s, tl] = await Promise.all([
+    PNLApi.get("/api/availability/summary?range=" + range),
+    PNLApi.get("/api/availability/timeline?range=" + (range === "all" ? "30d" : range)),
+  ]);
+  if (!s.total_slots) { document.getElementById("av-note").textContent = "Aún sin timeline — se reconstruye cada 3 min."; return; }
+
+  const kv = (id, val, ok) => {
+    const el = document.getElementById(id);
+    el.querySelector(".kpi-value").textContent = val;
+    el.className = "kpi " + (ok === null ? "" : ok ? "kpi-ok" : "kpi-bad");
+  };
+  kv("k-collector", s.collector_availability_pct + " %", s.collector_availability_pct >= 99);
+  kv("k-network", (s.network_availability_pct ?? "—") + (s.network_availability_pct != null ? " %" : ""),
+     s.network_availability_pct == null ? null : s.network_availability_pct >= 99);
+  kv("k-down", fmtMin(s.collector_downtime_minutes), s.collector_downtime_minutes < 60);
+  kv("k-netdown", fmtMin(s.network_downtime_minutes), s.network_downtime_minutes < 60);
+
+  document.getElementById("av-note").textContent =
+    `${s.total_slots.toLocaleString()} slots de ${s.slot_minutes} min · ${PNLApi.fmtTime(s.first_slot)} → ${PNLApi.fmtTime(s.last_slot)}`;
+
+  // strip
+  const segs = tl.segments;
+  const t0 = new Date(segs[0].start).getTime();
+  const t1 = new Date(segs[segs.length - 1].end).getTime() + 60000;
+  const span = Math.max(1, t1 - t0);
+  document.getElementById("av-strip").innerHTML = segs.map(seg => {
+    const w = ((new Date(seg.end).getTime() + 60000 - new Date(seg.start).getTime()) / span) * 100;
+    const title = `${PNLApi.fmtTime(seg.start)} → ${PNLApi.fmtTime(seg.end)}` + (seg.reason ? ` · ${seg.reason}` : "");
+    return `<div class="${seg.state}" style="width:${w}%" title="${title}"></div>`;
+  }).join("");
+
+  // grid
+  document.getElementById("av-grid").innerHTML = [
+    ["Slots totales", s.total_slots.toLocaleString()],
+    ["Con captura", s.collector_up_slots.toLocaleString()],
+    ["Sin captura", s.collector_down_slots.toLocaleString()],
+    ["Slots red medida", s.network_measured_slots.toLocaleString()],
+    ["Slots red OK", s.network_up_slots.toLocaleString()],
+  ].map(([k, v]) => `<div class="stat"><span class="stat-label">${k}</span><span class="stat-value">${v}</span></div>`).join("")
+   + Object.entries(s.down_by_reason).map(([k, v]) =>
+       `<div class="stat"><span class="stat-label">Sin captura: ${k}</span><span class="stat-value">${fmtMin(v * s.slot_minutes)}</span></div>`).join("");
+
+  // outages
+  document.querySelector("#av-outages tbody").innerHTML = s.outages.length
+    ? s.outages.slice().reverse().map(o => `<tr class="r-${(o.reason || '').toLowerCase()}">
+        <td>${PNLApi.fmtTime(o.start)}</td><td>${PNLApi.fmtTime(o.end)}</td>
+        <td>${fmtMin(o.minutes)}</td><td>${o.reason}</td></tr>`).join("")
+    : `<tr><td colspan="4" class="muted">Sin cortes en la ventana.</td></tr>`;
+}
+function fmtMin(m) {
+  if (m == null) return "—";
+  if (m < 60) return m.toFixed(0) + " min";
+  const h = Math.floor(m / 60), r = Math.round(m % 60);
+  return h >= 24 ? `${Math.floor(h / 24)}d ${h % 24}h` : `${h}h ${r}m`;
+}
+document.getElementById("av-range").addEventListener("change", load);
+document.addEventListener("DOMContentLoaded", load);
+</script>
+{% endblock %}

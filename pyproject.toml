@@ -18,6 +18,8 @@ ignore = ["B008"]  # FastAPI Depends() in argument defaults
 
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]
+# standalone scripts insert the repo root on sys.path before importing the app
+"scripts/*.py" = ["E402", "I001"]
 
 [tool.mypy]
 python_version = "3.11"

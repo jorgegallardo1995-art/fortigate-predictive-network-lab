@@ -106,6 +106,13 @@ gaps:
   # A gap is recorded when: (now - previous_sample) > interval + tolerance
   tolerance_seconds: 30
 
+# --- Availability timeline (continuous, gap-free sequence) ------------------
+# One row per sampling slot from the dataset start to now: collector_up / down
+# (+ reason) and, when up, the measured network_up. Rebuilt on this interval;
+# does NOT invent telemetry, only records presence/absence on a regular grid.
+availability:
+  rebuild_interval_seconds: 180
+
 # --- Machine-learning labelling (prepared, NOT applied automatically) -------
 ml_labels:
   classes:

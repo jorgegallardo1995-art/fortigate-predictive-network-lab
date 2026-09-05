@@ -112,6 +112,47 @@ def dataset_coverage(
     return variable_coverage(session, data_source or _default_source())
 
 
+# --- availability (continuous timeline) ------------------------------------
+_RANGE_HOURS = {"24h": 24, "7d": 168, "30d": 720, "all": None}
+
+
+@router.get("/availability/summary")
+def availability_summary(
+    range: str = "all",
+    data_source: str | None = None,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    from app.services import availability_service
+
+    return availability_service.summary(
+        session, data_source or _default_source(), _RANGE_HOURS.get(range, None)
+    )
+
+
+@router.get("/availability/timeline")
+def availability_timeline(
+    range: str = "7d",
+    data_source: str | None = None,
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
+    from app.services import availability_service
+
+    hours = _RANGE_HOURS.get(range) or 720
+    return {
+        "range": range,
+        "segments": availability_service.timeline_segments(
+            session, data_source or _default_source(), hours
+        ),
+    }
+
+
+@router.post("/availability/rebuild")
+def availability_rebuild(full: bool = False) -> dict[str, Any]:
+    from app.services import availability_service
+
+    return {"slots_written": availability_service.rebuild_all(full=full)}
+
+
 # --- events / gaps ----------------------------------------------------
 @router.get("/events")
 def get_events(

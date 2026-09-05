@@ -27,6 +27,7 @@ from app.core.timeutils import utc_now
 from app.database.database import engine
 from app.database.models import (
     DATA_SOURCE_REAL,
+    AvailabilityMinute,
     CollectionGap,
     Experiment,
     NetworkEvent,
@@ -136,6 +137,19 @@ def export_experiments(_f: ExportFilter) -> Path:
     return _write(df, "experiments_dataset")
 
 
+def export_availability(f: ExportFilter) -> Path:
+    """Continuous, gap-free timeline: one row per sampling slot with
+    collector_up / network_up / reason. The 'continuidad operativa' dataset."""
+    stmt = select(AvailabilityMinute).where(AvailabilityMinute.data_source == f.data_source)
+    if f.start:
+        stmt = stmt.where(AvailabilityMinute.slot_utc >= f.start)
+    if f.end:
+        stmt = stmt.where(AvailabilityMinute.slot_utc <= f.end)
+    with engine.connect() as conn:
+        df = pd.read_sql(stmt.order_by(AvailabilityMinute.slot_utc), conn)
+    return _write(df, f"availability_dataset_{f.data_source.lower()}")
+
+
 def export_probes(f: ExportFilter) -> Path:
     stmt = _apply(select(ProbeResult), ProbeResult, f).order_by(ProbeResult.timestamp_utc)
     with engine.connect() as conn:
@@ -175,6 +189,7 @@ def export_data_dictionary(_f: ExportFilter) -> Path:
 EXPORTERS = {
     "raw": export_raw,
     "features": export_features,
+    "availability": export_availability,
     "events": export_events,
     "gaps": export_gaps,
     "experiments": export_experiments,

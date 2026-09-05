@@ -407,6 +407,43 @@ class CollectionGap(Base):
     reason: Mapped[str] = mapped_column(String(32), default="UNKNOWN")
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # True when the collector host rebooted during this gap (POWER_FAILURE /
+    # SYSTEM_REBOOT); False when the host stayed up (COLLECTOR_FAILURE / network).
+    host_rebooted: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    host_boot_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AvailabilityMinute(Base):
+    """Continuous availability timeline - one row per expected sampling slot.
+
+    Derived (rebuildable) from ``telemetry_raw`` + ``collection_gaps``. Unlike the
+    RAW table this has NO holes: every interval from the dataset start to now has
+    a row, marking whether the collector had a sample (``collector_up``) and, when
+    it did, the measured network state (``network_up``). During a collector
+    outage ``network_up`` is NULL - genuinely unknown, not assumed.
+    """
+
+    __tablename__ = "availability_timeline"
+    __table_args__ = (
+        UniqueConstraint("slot_utc", "data_source", name="uq_availability_slot"),
+        Index("ix_availability_slot", "slot_utc"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    slot_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    data_source: Mapped[str] = mapped_column(String(8), index=True)
+
+    collector_up: Mapped[bool] = mapped_column(Boolean, default=False)
+    network_up: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    gap_id: Mapped[int | None] = mapped_column(ForeignKey("collection_gaps.id"), nullable=True)
+    sample_id: Mapped[int | None] = mapped_column(ForeignKey("telemetry_raw.id"), nullable=True)
+
+    latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    packet_loss_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    rebuilt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class Experiment(Base):

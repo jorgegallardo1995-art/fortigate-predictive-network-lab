@@ -72,6 +72,16 @@ class CollectorScheduler:
                 name="Feature engineering",
                 replace_existing=True,
             )
+        self._scheduler.add_job(
+            self._run_availability_rebuild,
+            trigger=IntervalTrigger(
+                seconds=int(self.cfg.get("availability.rebuild_interval_seconds", 180))
+            ),
+            id="availability_rebuild",
+            name="Availability timeline",
+            next_run_time=utc_now(),
+            replace_existing=True,
+        )
         if self.cfg.get("backup.enabled", True):
             self._scheduler.add_job(
                 self._run_backup,
@@ -152,6 +162,16 @@ class CollectorScheduler:
                 logger.info("recomputed %d feature rows", n)
         except Exception:
             logger.exception("feature recompute failed")
+
+    def _run_availability_rebuild(self) -> None:
+        try:
+            from app.services.availability_service import rebuild_all
+
+            n = rebuild_all(full=False)
+            if n:
+                logger.debug("availability timeline: %d slots", n)
+        except Exception:
+            logger.exception("availability rebuild failed")
 
     def _run_backup(self) -> None:
         try:
