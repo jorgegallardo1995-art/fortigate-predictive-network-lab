@@ -81,18 +81,23 @@ echo "==> [8/12] Applying database migrations"
 sudo -u "$RUN_USER" bash -c "cd '$APP_DIR' && .venv/bin/alembic upgrade head"
 
 # 9. systemd unit ----------------------------------------------
-echo "==> [9/12] Installing systemd unit"
+echo "==> [9/12] Installing systemd unit + watchdog"
 sed -e "s|__APP_DIR__|$APP_DIR|g" \
     -e "s|__DATA_DIR__|$DATA_DIR|g" \
     -e "s|__RUN_USER__|$RUN_USER|g" \
     -e "s|__DASHBOARD_HOST__|$DASHBOARD_HOST|g" \
     -e "s|__DASHBOARD_PORT__|$DASHBOARD_PORT|g" \
     "$APP_DIR/systemd/fortigate-collector.service" > "$SERVICE_FILE"
+sed -e "s|__APP_DIR__|$APP_DIR|g" \
+    "$APP_DIR/systemd/fortigate-collector-watchdog.service" > "/etc/systemd/system/${SERVICE_NAME}-watchdog.service"
+cp "$APP_DIR/systemd/fortigate-collector-watchdog.timer" "/etc/systemd/system/${SERVICE_NAME}-watchdog.timer"
+chmod +x "$APP_DIR/scripts/healthcheck.sh"
 systemctl daemon-reload
 
 # 10. enable ---------------------------------------------------
-echo "==> [10/12] Enabling service"
+echo "==> [10/12] Enabling service + watchdog timer"
 systemctl enable "$SERVICE_NAME"
+systemctl enable --now "${SERVICE_NAME}-watchdog.timer"
 
 # 11. start --------------------------------------------------
 echo "==> [11/12] Starting service"

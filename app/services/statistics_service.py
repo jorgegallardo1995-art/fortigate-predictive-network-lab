@@ -182,12 +182,16 @@ def _count_by_label(session: Session, model: Any, data_source: str) -> list[dict
 
 
 def _raw_dataframe(session: Session, since, until, data_source: str) -> pd.DataFrame:
-    rows = repo.raw_history(session, since, until, data_source)
+    cols = [TelemetryRaw.timestamp_utc, *(getattr(TelemetryRaw, c) for c in _NUMERIC_COLUMNS)]
+    stmt = select(*cols).where(
+        TelemetryRaw.timestamp_utc >= since, TelemetryRaw.data_source == data_source
+    )
+    if until:
+        stmt = stmt.where(TelemetryRaw.timestamp_utc <= until)
+    rows = session.execute(stmt.order_by(TelemetryRaw.timestamp_utc.asc())).all()
     if not rows:
         return pd.DataFrame()
-    return pd.DataFrame(
-        [{"timestamp_utc": r.timestamp_utc, **{c: getattr(r, c) for c in _NUMERIC_COLUMNS}} for r in rows]
-    )
+    return pd.DataFrame(rows, columns=["timestamp_utc", *_NUMERIC_COLUMNS])
 
 
 def variable_statistics(
@@ -279,14 +283,20 @@ def history_series(
 ) -> dict[str, Any]:
     hours = _RANGE_TO_HOURS.get(range_key, 24)
     since = utc_now() - timedelta(hours=hours)
-    rows = repo.raw_history(session, since, None, data_source)
-    timestamps = [r.timestamp_utc.isoformat() for r in rows]
-    series = {
-        m: [getattr(r, m, None) for r in rows]
-        for m in metrics
-        if m in TelemetryRaw.__table__.columns
+    wanted = [m for m in metrics if m in TelemetryRaw.__table__.columns]
+    # Select only timestamp + the requested metric columns (not whole rows).
+    cols = [TelemetryRaw.timestamp_utc, *(getattr(TelemetryRaw, m) for m in wanted)]
+    rows = session.execute(
+        select(*cols)
+        .where(TelemetryRaw.timestamp_utc >= since, TelemetryRaw.data_source == data_source)
+        .order_by(TelemetryRaw.timestamp_utc.asc())
+    ).all()
+    return {
+        "range": range_key,
+        "data_source": data_source,
+        "timestamps": [r[0].isoformat() for r in rows],
+        "series": {m: [r[i + 1] for r in rows] for i, m in enumerate(wanted)},
     }
-    return {"range": range_key, "data_source": data_source, "timestamps": timestamps, "series": series}
 
 
 def _r(value: Any) -> float | None:

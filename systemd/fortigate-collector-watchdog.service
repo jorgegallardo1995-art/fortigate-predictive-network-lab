@@ -1,0 +1,9 @@
+# Watchdog for fortigate-collector - installed by scripts/install_raspberry.sh.
+[Unit]
+Description=Health check for fortigate-collector (restart it if its HTTP API hangs)
+After=fortigate-collector.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=-__APP_DIR__/.env
+ExecStart=__APP_DIR__/scripts/healthcheck.sh

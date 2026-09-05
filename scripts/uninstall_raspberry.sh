@@ -12,10 +12,13 @@ SERVICE_FILE="/etc/systemd/system/${SERVICE_NAME}.service"
 
 if [[ $EUID -ne 0 ]]; then echo "ERROR: run with sudo." >&2; exit 1; fi
 
-echo "==> Stopping and disabling $SERVICE_NAME"
+echo "==> Stopping and disabling $SERVICE_NAME (+ watchdog)"
+systemctl disable --now "${SERVICE_NAME}-watchdog.timer" 2>/dev/null || true
 systemctl stop "$SERVICE_NAME" 2>/dev/null || true
 systemctl disable "$SERVICE_NAME" 2>/dev/null || true
-rm -f "$SERVICE_FILE"
+rm -f "$SERVICE_FILE" \
+      "/etc/systemd/system/${SERVICE_NAME}-watchdog.service" \
+      "/etc/systemd/system/${SERVICE_NAME}-watchdog.timer"
 systemctl daemon-reload
 echo "==> Service removed."
 
