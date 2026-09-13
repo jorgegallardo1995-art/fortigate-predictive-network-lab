@@ -384,20 +384,31 @@ _PIPELINE_MODULES = [
 ]
 
 
-def _loss_chart(history: dict[str, list[float]]):
+_METRIC_LABELS = {
+    "loss": "Loss (binary crossentropy)",
+    "accuracy": "Accuracy",
+    "precision": "Precision",
+    "recall": "Recall",
+    "auc": "ROC-AUC",
+}
+
+
+def _metric_chart(history: dict[str, list[float]], key: str):
+    """Train-vs-val curve for one metric across epochs (e.g. loss, accuracy,
+    precision, recall, auc), read straight from ml/train.py's history.json."""
     from reportlab.graphics.charts.lineplots import LinePlot
     from reportlab.graphics.shapes import Drawing, String
 
-    loss = history.get("loss") or []
-    val_loss = history.get("val_loss") or []
-    if not loss:
+    train_vals = history.get(key) or []
+    val_vals = history.get(f"val_{key}") or []
+    if not train_vals:
         return None
-    epochs = list(range(1, len(loss) + 1))
-    series = [list(zip(epochs, loss, strict=True))]
-    labels = ["loss (train)"]
-    if val_loss and len(val_loss) == len(loss):
-        series.append(list(zip(epochs, val_loss, strict=True)))
-        labels.append("val_loss")
+    epochs = list(range(1, len(train_vals) + 1))
+    series = [list(zip(epochs, train_vals, strict=True))]
+    labels = [f"{key} (train)"]
+    if val_vals and len(val_vals) == len(train_vals):
+        series.append(list(zip(epochs, val_vals, strict=True)))
+        labels.append(f"val_{key}")
 
     d = Drawing(460, 190)
     lp = LinePlot()
@@ -410,12 +421,15 @@ def _loss_chart(history: dict[str, list[float]]):
         lp.lines[i].strokeWidth = 1.2
     lp.xValueAxis.valueMin = 1
     lp.xValueAxis.valueMax = max(epochs)
-    ymax = max([*loss, *val_loss]) if (loss or val_loss) else 1.0
-    lp.yValueAxis.valueMin = 0
+    all_vals = [*train_vals, *val_vals]
+    ymin = min(0.0, min(all_vals))
+    ymax = max(all_vals) if all_vals else 1.0
+    lp.yValueAxis.valueMin = ymin
     lp.yValueAxis.valueMax = ymax * 1.1 if ymax > 0 else 1.0
     d.add(lp)
+    d.add(String(45, 178, _METRIC_LABELS.get(key, key), fontSize=8, fillColor=colors.HexColor("#222")))
     for i, lbl in enumerate(labels):
-        d.add(String(45 + i * 100, 178, lbl, fontSize=7, fillColor=palette[i % len(palette)]))
+        d.add(String(45 + i * 100, 166, lbl, fontSize=7, fillColor=palette[i % len(palette)]))
     return d
 
 
@@ -673,10 +687,9 @@ def build_run_report(run_id: str) -> Any:
     p("4. Curva de entrenamiento", h2)
     if history.get("loss"):
         p(f"{len(history['loss'])} epocas ejecutadas (max {cfg.get('max_epochs')}, "
-          f"EarlyStopping patience={cfg.get('early_stopping_patience')}).", styles["Small"])
-        chart = _loss_chart(history)
-        if chart is not None:
-            S.append(chart)
+          f"EarlyStopping patience={cfg.get('early_stopping_patience')}). Una curva train-vs-val "
+          "por metrica, tal como quedaron registradas en history.json (sin recalcular).",
+          styles["Small"])
         last = {k: v[-1] for k, v in history.items() if v}
         first = {k: v[0] for k, v in history.items() if v}
         table([
@@ -684,6 +697,16 @@ def build_run_report(run_id: str) -> Any:
             *[[k, _fmt(first.get(k)), _fmt(last.get(k))]
               for k in ("loss", "accuracy", "precision", "recall", "auc") if k in last],
         ], [45 * mm, 65 * mm, 65 * mm])
+        S.append(Spacer(1, 2 * mm))
+
+        metric_keys = [k for k in ("loss", "accuracy", "precision", "recall", "auc") if history.get(k)]
+        for i, key in enumerate(metric_keys):
+            chart = _metric_chart(history, key)
+            if chart is not None:
+                S.append(chart)
+                S.append(Spacer(1, 2 * mm))
+                if i < len(metric_keys) - 1:
+                    S.append(PageBreak())
     else:
         p("Sin historial de entrenamiento disponible para esta corrida.", styles["Small"])
 
