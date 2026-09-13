@@ -69,6 +69,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--db", help="path to a LOCAL COPY of fortigate.db")
     p.add_argument("--data-source", default="REAL", choices=["REAL", "MOCK"])
+    p.add_argument(
+        "--since",
+        help="ISO8601 instant; restrict to telemetry at/after it (scope a run to a short "
+             "pilot window, e.g. a single day of controlled experiments, so the temporal "
+             "split has positives in train/val/test instead of clustering them all in test)",
+    )
     p.add_argument("--failures-json", help='JSON file: {"failure_timestamps": ["2026-...Z", ...]}')
     p.add_argument("--output-dir", default="data/models")
     p.add_argument("--synthetic-demo", action="store_true",
@@ -101,7 +107,7 @@ def main(argv: list[str] | None = None) -> int:
         failures = failures_from_manual(df.attrs["synthetic_failure_timestamps"])
         data_source = "SYNTHETIC"
     else:
-        df = load_dataset(args.db, args.data_source)
+        df = load_dataset(args.db, args.data_source, since=args.since)
         experiments_df = load_experiments(args.db)
         events_df = load_network_events(args.db, FAILURE_EVENT_TYPES)
         failures = dedupe_failures(
@@ -110,6 +116,13 @@ def main(argv: list[str] | None = None) -> int:
             + _load_manual_failures(args.failures_json)
         )
         data_source = args.data_source
+
+    if args.since:
+        print("=" * 78)
+        print(f"PILOT WINDOW MODE - analysis scoped to telemetry since {args.since}.")
+        print("The temporal split is computed within this window only. Report this as a")
+        print("short pilot/proof-of-concept, not a full-history generalization result.")
+        print("=" * 78)
 
     print(f"loaded {len(df):,} rows ({data_source}), {len(failures)} candidate failure instant(s)")
 
@@ -232,6 +245,7 @@ def main(argv: list[str] | None = None) -> int:
         "tensorflow_version": tf.__version__,
         "platform": f"{platform.system()} {platform.machine()}",
         "data_source": data_source,
+        "pilot_window_since": args.since,
         "config": asdict(cfg),
         "feature_columns": feature_cols,
         "dataset_period": {

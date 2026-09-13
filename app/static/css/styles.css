@@ -106,6 +106,17 @@ tr.sev-critical td { color: var(--bad); }
 .meta-list dt { color: var(--muted); }
 .meta-list dd { margin: 0; }
 
+.card {
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px;
+}
+.alert {
+  border-radius: 8px; padding: 10px 14px; margin: 8px 0; font-size: 13px; line-height: 1.5;
+}
+.alert-bad { background: rgba(248,81,73,.1); border: 1px solid rgba(248,81,73,.35); color: var(--text); }
+.alert-warn { background: rgba(210,153,34,.1); border: 1px solid rgba(210,153,34,.35); color: var(--text); }
+.kpi-ok-cell { color: var(--ok); font-weight: 700; }
+
 .chips { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; }
 .chips li { background: var(--bg-elev-2); border: 1px solid var(--border); border-radius: 6px; padding: 3px 8px; font-size: 12px; }
 .chips-muted li { color: var(--muted); }

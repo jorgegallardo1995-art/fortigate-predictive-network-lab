@@ -354,3 +354,286 @@ def _footer(canvas: Any, doc: Any) -> None:
     canvas.drawString(15 * mm, 10 * mm, "Predictive Network Lab - informe tecnico del dataset")
     canvas.drawRightString(195 * mm, 10 * mm, f"pag. {doc.page}")
     canvas.restoreState()
+
+
+_ARCHITECTURE_CODE = """Sequential([
+    Input(shape=(window_steps, n_features)),
+    LSTM(lstm1_units, return_sequences=True),
+    Dropout(dropout),
+    LSTM(lstm2_units, return_sequences=False),
+    Dropout(dropout),
+    Dense(dense_units, activation=dense_activation),
+    Dropout(dropout),
+    Dense(1, activation=output_activation),
+])
+model.compile(optimizer=Adam(learning_rate=learning_rate), loss=loss,
+              metrics=["accuracy", Precision(), Recall(), AUC()])"""
+
+_PIPELINE_MODULES = [
+    ("ml/data_loading.py", "Lee telemetry_raw + probe_results directo de SQLite (solo lectura, SQL plano). Sin dependencia de app/."),
+    ("ml/labeling.py", "y_t = 1 si ocurre una falla confirmada en (t, t+horizon_minutes]. Solo desde failure_timestamp de experimentos u eventos confirmados - nunca de umbrales del dashboard."),
+    ("ml/segments.py", "Particiona el dataset en tramos continuos (sin huecos > gap_tolerance_seconds) para no construir ventanas que crucen una interrupción de recolección."),
+    ("ml/sequences.py", "Construye (N, window_steps, n_features). Descarta cualquier ventana con NaN en algún paso - nunca imputa/fabrica datos faltantes."),
+    ("ml/preprocessing.py", "Split temporal 70/15/15 (nunca aleatorio, nunca mezcla cronología). StandardScaler ajustado SOLO con train."),
+    ("ml/model.py", "Arquitectura LSTM exacta (ver abajo). build_model(cfg) - TensorFlow importado de forma perezosa."),
+    ("ml/baselines.py", "Regla de umbral reactiva + Random Forest sobre features aplanadas, para comparar contra el LSTM."),
+    ("ml/evaluate.py", "Accuracy/precision/recall/F1/ROC-AUC/PR-AUC/matriz de confusión/falsas alarmas por día/Lead Time."),
+    ("ml/train.py", "CLI end-to-end que orquesta todo lo anterior y escribe run_metadata.json + metrics.json + history.json + model.keras."),
+]
+
+
+def _loss_chart(history: dict[str, list[float]]):
+    from reportlab.graphics.charts.lineplots import LinePlot
+    from reportlab.graphics.shapes import Drawing, String
+
+    loss = history.get("loss") or []
+    val_loss = history.get("val_loss") or []
+    if not loss:
+        return None
+    epochs = list(range(1, len(loss) + 1))
+    series = [list(zip(epochs, loss, strict=True))]
+    labels = ["loss (train)"]
+    if val_loss and len(val_loss) == len(loss):
+        series.append(list(zip(epochs, val_loss, strict=True)))
+        labels.append("val_loss")
+
+    d = Drawing(460, 190)
+    lp = LinePlot()
+    lp.x, lp.y = 45, 30
+    lp.height, lp.width = 140, 400
+    lp.data = series
+    palette = [colors.HexColor("#3ea6ff"), colors.HexColor("#f85149")]
+    for i, _ in enumerate(series):
+        lp.lines[i].strokeColor = palette[i % len(palette)]
+        lp.lines[i].strokeWidth = 1.2
+    lp.xValueAxis.valueMin = 1
+    lp.xValueAxis.valueMax = max(epochs)
+    ymax = max([*loss, *val_loss]) if (loss or val_loss) else 1.0
+    lp.yValueAxis.valueMin = 0
+    lp.yValueAxis.valueMax = ymax * 1.1 if ymax > 0 else 1.0
+    d.add(lp)
+    for i, lbl in enumerate(labels):
+        d.add(String(45 + i * 100, 178, lbl, fontSize=7, fillColor=palette[i % len(palette)]))
+    return d
+
+
+def build_run_report(run_id: str) -> Any:
+    """Full documentation PDF for one ml/train.py run: architecture, pipeline code
+    summary, dataset/labeling used, training curve, confusion matrix and metrics.
+    Reads only the JSON artefacts under data/models/<run_id>/ - no TensorFlow
+    dependency, so it also runs on the Raspberry Pi once a run is copied there.
+    """
+    import json
+
+    from app.services import model_service
+
+    run = model_service.get_run(run_id)
+    if run is None:
+        raise FileNotFoundError(f"no run found: {run_id}")
+    meta = run["metadata"]
+    metrics = run.get("metrics") or {}
+    cfg = meta.get("config", {})
+
+    settings = get_settings()
+    history_path = settings.data_dir / "models" / run_id / "history.json"
+    history = json.loads(history_path.read_text()) if history_path.is_file() else {}
+
+    styles = getSampleStyleSheet()
+    styles.add(ParagraphStyle("Small", parent=styles["Normal"], fontSize=7.5, leading=9.5))
+    styles.add(ParagraphStyle("Cell", parent=styles["Normal"], fontSize=7, leading=8.5))
+    styles.add(ParagraphStyle("Mono", parent=styles["Normal"], fontName="Courier", fontSize=7.5, leading=9.5))
+    h2 = styles["Heading2"]
+    body = styles["BodyText"]
+
+    stamp = utc_now().strftime("%Y%m%dT%H%M%SZ")
+    path = settings.exports_dir / f"model_run_report_{run_id}_{stamp}.pdf"
+    settings.exports_dir.mkdir(parents=True, exist_ok=True)
+
+    doc = SimpleDocTemplate(
+        str(path), pagesize=A4,
+        topMargin=16 * mm, bottomMargin=16 * mm, leftMargin=15 * mm, rightMargin=15 * mm,
+        title=f"Informe de entrenamiento {run_id} - Predictive Network Lab",
+    )
+    S: list[Any] = []
+
+    def p(text: str, style=body) -> None:
+        S.append(Paragraph(text, style))
+
+    def table(data: list[list[Any]], widths: list[float], header: bool = True) -> None:
+        t = Table(data, colWidths=widths, repeatRows=1 if header else 0)
+        style = [
+            ("FONTSIZE", (0, 0), (-1, -1), 7),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#c8c8c8")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ]
+        if header:
+            style += [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1a2331")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ]
+        t.setStyle(TableStyle(style))
+        S.append(t)
+
+    # --- cover ---
+    p("Predictive Network Lab", styles["Title"])
+    p(f"Informe de entrenamiento LSTM &mdash; {run_id}", styles["Italic"])
+    S.append(Spacer(1, 3 * mm))
+    p(f"Generado: {utc_now().isoformat()} &middot; Fuente de datos: <b>{meta.get('data_source')}</b> "
+      f"&middot; git commit: <code>{meta.get('git_commit')}</code>", styles["Small"])
+
+    if meta.get("synthetic"):
+        p("<b>ADVERTENCIA: corrida con datos SINTETICOS (inyectados).</b> Valida solo la mecanica "
+          "del pipeline. NO citar como resultado real de tesis.", styles["Small"])
+    if meta.get("pilot_window_since"):
+        p(f"<b>Ventana piloto:</b> analisis acotado a telemetria desde {meta['pilot_window_since']}. "
+          "Reportar como experimento piloto de corta duracion, no como generalizacion sobre "
+          "todo el historico.", styles["Small"])
+    seq = meta.get("sequences", {})
+    if not meta.get("synthetic") and (seq.get("train_positives") or 0) == 0:
+        p("<b>ADVERTENCIA: 0 ejemplos positivos en entrenamiento.</b> El modelo no pudo aprender "
+          "el patron precursor de falla; las metricas de test son degeneradas por diseno "
+          "(el pipeline las reporta igual, sin ocultar el resultado).", styles["Small"])
+    S.append(Spacer(1, 4 * mm))
+
+    # --- 1. architecture ---
+    p("1. Arquitectura del modelo", h2)
+    p("LSTM apilado con regularizacion por dropout, siguiendo la especificacion metodologica "
+      "(Cap. 3.16) del proyecto de tesis.", styles["Small"])
+    table([
+        ["Capa", "Configuracion"],
+        ["Input", f"({cfg.get('window_steps') or meta.get('sequences', {}).get('window_steps', '15')}, {cfg.get('n_features')})"],
+        ["LSTM 1", f"{cfg.get('lstm1_units')} unidades, return_sequences=True"],
+        ["Dropout", f"{cfg.get('dropout')}"],
+        ["LSTM 2", f"{cfg.get('lstm2_units')} unidades, return_sequences=False"],
+        ["Dropout", f"{cfg.get('dropout')}"],
+        ["Dense", f"{cfg.get('dense_units')} unidades, activacion {cfg.get('dense_activation')}"],
+        ["Dropout", f"{cfg.get('dropout')}"],
+        ["Dense (salida)", f"1 unidad, activacion {cfg.get('output_activation')}"],
+        ["Parametros entrenables", f"{meta.get('model_params'):,}" if meta.get("model_params") else "—"],
+        ["Loss / Optimizador", f"{cfg.get('loss')} / Adam(lr={cfg.get('learning_rate')})"],
+        ["Batch size / Max epochs", f"{cfg.get('batch_size')} / {cfg.get('max_epochs')}"],
+        ["EarlyStopping", f"patience={cfg.get('early_stopping_patience')}, restore_best_weights=True"],
+        ["Seed", f"{cfg.get('seed')}"],
+    ], [45 * mm, 130 * mm])
+    S.append(Spacer(1, 3 * mm))
+    p("Definicion exacta (ml/model.py):", styles["Small"])
+    S.append(Paragraph(_ARCHITECTURE_CODE.replace("\n", "<br/>").replace(" ", "&nbsp;"), styles["Mono"]))
+
+    S.append(PageBreak())
+
+    # --- 2. pipeline / code ---
+    p("2. Pipeline de entrenamiento (paquete ml/)", h2)
+    p("Paquete desacoplado de la app de recoleccion (nunca corre en la Raspberry Pi); "
+      f"TensorFlow {meta.get('tensorflow_version')}, Python {meta.get('python_version')}, "
+      f"{meta.get('platform')}.", styles["Small"])
+    rows = [["Modulo", "Rol"]]
+    for name, desc in _PIPELINE_MODULES:
+        rows.append([name, Paragraph(desc, styles["Cell"])])
+    table(rows, [38 * mm, 137 * mm])
+
+    S.append(PageBreak())
+
+    # --- 3. dataset & labeling ---
+    p("3. Datos usados en esta corrida", h2)
+    period = meta.get("dataset_period", {})
+    table([
+        ["Periodo de datos", f"{period.get('start')} -> {period.get('end')}"],
+        ["Filas totales", f"{period.get('total_rows'):,}" if period.get("total_rows") else "0"],
+        ["Fallas candidatas (T_f)", str(len(meta.get("failure_instants", [])))],
+        ["Instantes de falla",
+         Paragraph("<br/>".join(meta.get("failure_instants", [])) or "—", styles["Cell"])],
+    ], [45 * mm, 130 * mm], header=False)
+    S.append(Spacer(1, 3 * mm))
+
+    p("Etiquetado (ground truth)", styles["Heading3"])
+    lab = meta.get("labeling", {})
+    table([
+        ["Filas totales", "Positivas", "Negativas", "% positivas", "Fallas distintas"],
+        [f"{lab.get('total_rows', 0):,}", f"{lab.get('positive_rows', 0):,}",
+         f"{lab.get('negative_rows', 0):,}", _fmt(lab.get("positive_pct")),
+         str(lab.get("distinct_failures", 0))],
+    ], [35 * mm, 35 * mm, 35 * mm, 35 * mm, 35 * mm])
+    S.append(Spacer(1, 3 * mm))
+
+    p("Segmentacion continua y particion temporal (70/15/15, sin aleatorizar)", styles["Heading3"])
+    segs = meta.get("segments", {})
+    table([
+        ["Segmentos continuos", "Filas totales", "Segmento mas largo"],
+        [str(segs.get("n_segments", 0)), f"{segs.get('total_rows', 0):,}", f"{segs.get('longest_segment_rows', 0):,}"],
+    ], [55 * mm, 55 * mm, 55 * mm])
+    S.append(Spacer(1, 2 * mm))
+    cutoffs = meta.get("split_cutoffs", {})
+    table([
+        ["Particion", "n secuencias", "Positivas", "Corte cronologico"],
+        ["train", str(seq.get("train", 0)), str(seq.get("train_positives", 0)), "inicio -> " + str(cutoffs.get("train_end"))],
+        ["val", str(seq.get("val", 0)), str(seq.get("val_positives", 0)), str(cutoffs.get("train_end")) + " -> " + str(cutoffs.get("val_end"))],
+        ["test", str(seq.get("test", 0)), str(seq.get("test_positives", 0)), str(cutoffs.get("val_end")) + " -> fin"],
+    ], [25 * mm, 30 * mm, 25 * mm, 90 * mm])
+    S.append(Spacer(1, 3 * mm))
+    p(f"Scaler (StandardScaler) ajustado <b>solo con TRAIN</b>. "
+      f"class_weight (calculado solo con TRAIN, 'balanced'): {meta.get('class_weight')}.", styles["Small"])
+
+    S.append(PageBreak())
+
+    # --- 4. training curve ---
+    p("4. Curva de entrenamiento", h2)
+    if history.get("loss"):
+        p(f"{len(history['loss'])} epocas ejecutadas (max {cfg.get('max_epochs')}, "
+          f"EarlyStopping patience={cfg.get('early_stopping_patience')}).", styles["Small"])
+        chart = _loss_chart(history)
+        if chart is not None:
+            S.append(chart)
+        last = {k: v[-1] for k, v in history.items() if v}
+        first = {k: v[0] for k, v in history.items() if v}
+        table([
+            ["Metrica (TRAIN)", "Epoca 1", "Ultima epoca"],
+            *[[k, _fmt(first.get(k)), _fmt(last.get(k))]
+              for k in ("loss", "accuracy", "precision", "recall", "auc") if k in last],
+        ], [45 * mm, 65 * mm, 65 * mm])
+    else:
+        p("Sin historial de entrenamiento disponible para esta corrida.", styles["Small"])
+
+    S.append(PageBreak())
+
+    # --- 5. results ---
+    p("5. Resultados (TEST)", h2)
+    lstm_test = metrics.get("lstm_test") or {}
+    cm = lstm_test.get("confusion_matrix", {})
+    if lstm_test:
+        table([
+            ["", "Prediccion: normal", "Prediccion: falla"],
+            ["Real: normal", str(cm.get("tn", "—")), str(cm.get("fp", "—"))],
+            ["Real: falla", str(cm.get("fn", "—")), str(cm.get("tp", "—"))],
+        ], [45 * mm, 55 * mm, 55 * mm])
+        S.append(Spacer(1, 3 * mm))
+
+        rows = [["Modelo", "Accuracy", "Precision", "Recall", "F1", "ROC-AUC", "PR-AUC", "Falsas alarmas/dia"]]
+        rows.append(["LSTM", *[_fmt(lstm_test.get(k)) for k in
+                                ("accuracy", "precision", "recall", "f1", "roc_auc", "pr_auc", "false_alarms_per_day")]])
+        for name, key in (("Regla de umbral", "threshold_rule"), ("Random Forest", "random_forest")):
+            b = metrics.get("baselines", {}).get(key)
+            if b:
+                rows.append([name, *[_fmt(b.get(k)) for k in
+                                      ("accuracy", "precision", "recall", "f1", "roc_auc", "pr_auc", "false_alarms_per_day")]])
+        table(rows, [30 * mm, 18 * mm, 18 * mm, 18 * mm, 18 * mm, 18 * mm, 18 * mm, 22 * mm])
+        S.append(Spacer(1, 3 * mm))
+        p(f"Umbral de decision seleccionado (en VAL): <b>{meta.get('selected_threshold')}</b>", styles["Small"])
+    else:
+        p("Sin metricas de test (particion test vacia o no evaluada).", styles["Small"])
+
+    S.append(Spacer(1, 4 * mm))
+    p("Lead time (anticipacion real de alerta)", styles["Heading3"])
+    lt = metrics.get("lead_time", {})
+    table([
+        ["Eventos evaluados", "Detectados", "Perdidos", "Lead time medio", "Min", "Max"],
+        [str(lt.get("events_evaluated", 0)), str(lt.get("events_detected", 0)),
+         str(lt.get("events_missed", 0)), _fmt(lt.get("mean_lead_time_minutes")),
+         _fmt(lt.get("min_lead_time_minutes")), _fmt(lt.get("max_lead_time_minutes"))],
+    ], [30 * mm, 25 * mm, 22 * mm, 30 * mm, 20 * mm, 20 * mm])
+
+    doc.build(S, onFirstPage=_footer, onLaterPages=_footer)
+    logger.info("model run report written: %s (%d KB)", path.name, path.stat().st_size // 1024)
+    return path

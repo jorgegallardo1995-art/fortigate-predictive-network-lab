@@ -185,6 +185,19 @@ def technical_report(data_source: str | None = None) -> Any:
     return FileResponse(path, media_type="application/pdf", filename=path.name)
 
 
+@router.get("/model/runs/{run_id}/report.pdf")
+def model_run_report(run_id: str) -> Any:
+    """Full documentation PDF for one training run: architecture, pipeline code
+    summary, dataset/labeling used, training curve, confusion matrix, metrics."""
+    from app.services.report_service import build_run_report
+
+    try:
+        path = build_run_report(run_id)
+    except FileNotFoundError:
+        raise HTTPException(404, "run not found") from None
+    return FileResponse(path, media_type="application/pdf", filename=path.name)
+
+
 # --- events / gaps ----------------------------------------------------
 @router.get("/events")
 def get_events(

@@ -39,16 +39,32 @@ def _connect(db_path: str | Path) -> sqlite3.Connection:
     return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
 
 
-def load_raw(db_path: str | Path, data_source: str = "REAL") -> pd.DataFrame:
-    """telemetry_raw for one data_source, ordered by time, only successful cycles."""
+def load_raw(
+    db_path: str | Path, data_source: str = "REAL", since: str | None = None
+) -> pd.DataFrame:
+    """telemetry_raw for one data_source, ordered by time, only successful cycles.
+
+    `since` (ISO8601) restricts to rows at or after that instant - used to scope
+    a training run to a short pilot window (e.g. a single day of controlled
+    experiments) instead of the full historical dataset.
+    """
     cols_sql = ", ".join(_RAW_COLUMNS)
     query = f"""
         SELECT {cols_sql} FROM telemetry_raw
         WHERE data_source = ? AND collection_success = 1
-        ORDER BY timestamp_utc
     """
+    params: list[str] = [data_source]
+    if since:
+        # timestamp_utc is stored as naive "YYYY-MM-DD HH:MM:SS.ffffff" (no "T"/"Z"),
+        # so an ISO8601 `since` must be reformatted to match or string comparison
+        # sorts wrong (" " < "T" lexicographically excludes every real row).
+        ts = pd.Timestamp(since)
+        ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+        query += " AND timestamp_utc >= ?"
+        params.append(ts.strftime("%Y-%m-%d %H:%M:%S"))
+    query += " ORDER BY timestamp_utc"
     with _connect(db_path) as conn:
-        df = pd.read_sql_query(query, conn, params=(data_source,), parse_dates=["timestamp_utc"])
+        df = pd.read_sql_query(query, conn, params=params, parse_dates=["timestamp_utc"])
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True)
     return df
 
@@ -104,13 +120,15 @@ def load_network_events(db_path: str | Path, event_types: tuple[str, ...]) -> pd
     return df
 
 
-def load_dataset(db_path: str | Path, data_source: str = "REAL") -> pd.DataFrame:
+def load_dataset(
+    db_path: str | Path, data_source: str = "REAL", since: str | None = None
+) -> pd.DataFrame:
     """Merge telemetry_raw + pivoted ICMP into the wide frame the pipeline works on.
 
     One row per successful acquisition cycle, columns = the 23 input variables +
     the leakage-reserved status fields + labeling/bookkeeping columns.
     """
-    raw = load_raw(db_path, data_source)
+    raw = load_raw(db_path, data_source, since=since)
     probes = load_probe_results(db_path, data_source)
     if not probes.empty:
         df = raw.merge(probes, left_on="id", right_on="raw_id", how="left")

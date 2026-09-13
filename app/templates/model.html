@@ -29,16 +29,54 @@
   <div class="table-wrap">
     <table id="runs-table" hidden>
       <thead><tr><th>run_id</th><th>fuente</th><th>secuencias (train/val/test)</th>
-        <th>positivos</th><th>umbral</th><th>F1 test</th><th>ROC-AUC</th>
-        <th>Lead time medio</th><th></th></tr></thead>
+        <th>positivos (train/val/test)</th><th>umbral</th><th>F1 test</th><th>ROC-AUC</th>
+        <th>Lead time medio</th><th></th><th></th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
 </section>
 
 <section class="panel" id="detail-panel" hidden>
-  <h2>Detalle de la corrida</h2>
-  <pre id="detail-json" style="white-space:pre-wrap;font-size:12px;max-height:480px;overflow:auto"></pre>
+  <h2>Detalle de la corrida <span id="detail-run-id" class="muted"></span>
+    <a id="detail-pdf-link" href="#" target="_blank" class="badge" style="background:var(--accent);color:#061018;text-decoration:none;margin-left:8px">
+      Descargar PDF completo</a>
+  </h2>
+  <div id="detail-banner"></div>
+
+  <div id="detail-grid" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin:12px 0">
+    <div class="card">
+      <h3 style="margin:0 0 8px">Dataset usado</h3>
+      <div id="detail-dataset" style="font-size:13px;line-height:1.6"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 8px">Etiquetado (ground truth)</h3>
+      <div id="detail-labeling" style="font-size:13px;line-height:1.6"></div>
+    </div>
+    <div class="card">
+      <h3 style="margin:0 0 8px">Reparto temporal (train/val/test)</h3>
+      <div id="detail-split" style="font-size:13px;line-height:1.6"></div>
+    </div>
+  </div>
+
+  <h3>Matriz de confusión (TEST, LSTM)</h3>
+  <div id="detail-confusion" style="max-width:360px"></div>
+
+  <h3>Métricas TEST — LSTM vs. baselines</h3>
+  <div class="table-wrap">
+    <table id="detail-metrics-table">
+      <thead><tr><th></th><th>accuracy</th><th>precision</th><th>recall</th><th>F1</th>
+        <th>ROC-AUC</th><th>PR-AUC</th><th>falsas alarmas/día</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <h3>Lead time (anticipación real de alerta)</h3>
+  <div id="detail-leadtime" style="font-size:13px;line-height:1.6"></div>
+
+  <details style="margin-top:16px">
+    <summary class="muted" style="cursor:pointer">Ver JSON crudo (run_metadata + metrics)</summary>
+    <pre id="detail-json" style="white-space:pre-wrap;font-size:12px;max-height:480px;overflow:auto"></pre>
+  </details>
 </section>
 {% endblock %}
 
@@ -72,9 +110,14 @@ async function load() {
     const test = met.lstm_test || {};
     const lt = met.lead_time || {};
     const seq = m.sequences || {};
-    const badge = m.synthetic ? ' <span class="badge badge-mock">DEMO</span>' : "";
+    const badges = [
+      m.synthetic ? '<span class="badge badge-mock">DEMO</span>' : "",
+      m.pilot_window_since ? '<span class="badge" style="background:rgba(62,166,255,.15);color:var(--accent)">PILOTO</span>' : "",
+      (!m.synthetic && (seq.train_positives ?? 0) === 0)
+        ? '<span class="badge" style="background:rgba(248,81,73,.15);color:var(--bad)">SIN POSITIVOS EN TRAIN</span>' : "",
+    ].filter(Boolean).join(" ");
     return `<tr>
-      <td>${m.run_id}${badge}</td>
+      <td>${m.run_id}${badges ? " " + badges : ""}</td>
       <td>${m.data_source}</td>
       <td>${seq.train ?? "—"}/${seq.val ?? "—"}/${seq.test ?? "—"}</td>
       <td>${seq.train_positives ?? 0}/${seq.val_positives ?? 0}/${seq.test_positives ?? 0}</td>
@@ -83,16 +126,109 @@ async function load() {
       <td>${test.roc_auc !== undefined && test.roc_auc !== null ? test.roc_auc.toFixed(3) : "—"}</td>
       <td>${lt.mean_lead_time_minutes ?? "—"} min</td>
       <td><a href="#" data-run="${m.run_id}">ver</a></td>
+      <td><a href="/api/model/runs/${m.run_id}/report.pdf" target="_blank">PDF</a></td>
     </tr>`;
   }).join("");
 
   document.querySelectorAll("[data-run]").forEach(a => a.addEventListener("click", async e => {
     e.preventDefault();
     const run = await PNLApi.get(`/api/model/runs/${a.dataset.run}`);
-    document.getElementById("detail-panel").hidden = false;
-    document.getElementById("detail-json").textContent = JSON.stringify(run, null, 2);
+    renderDetail(run);
   }));
 }
+
+function fmt(v, digits) {
+  if (v === undefined || v === null) return "—";
+  if (typeof v === "number") return digits !== undefined ? v.toFixed(digits) : v.toLocaleString();
+  return v;
+}
+
+function renderDetail(run) {
+  const m = run.metadata, met = run.metrics || {};
+  const test = met.lstm_test || {};
+  const lt = met.lead_time || {};
+  const seq = m.sequences || {};
+  const lab = m.labeling || {};
+  const cm = test.confusion_matrix || {};
+
+  document.getElementById("detail-panel").hidden = false;
+  document.getElementById("detail-run-id").textContent =
+    `— ${m.run_id}${m.synthetic ? " (DEMO sintético)" : ""}`;
+  document.getElementById("detail-pdf-link").href = `/api/model/runs/${m.run_id}/report.pdf`;
+
+  // Banners: synthetic / pilot window / degenerate split
+  let banners = [];
+  if (m.synthetic) {
+    banners.push(`<div class="alert alert-bad">⚠ Corrida con datos <b>SINTÉTICOS</b> (inyectados).
+      Sirve solo para validar que el pipeline funciona mecánicamente — NUNCA citar como
+      resultado real de tesis.</div>`);
+  }
+  if (m.pilot_window_since) {
+    banners.push(`<div class="alert alert-warn">ℹ Corrida acotada a una <b>ventana piloto</b>
+      desde <code>${m.pilot_window_since}</code>. Repórtala como experimento piloto de corta
+      duración, no como resultado de generalización sobre todo el histórico.</div>`);
+  }
+  const trainPos = seq.train_positives ?? 0, valPos = seq.val_positives ?? 0, testPos = seq.test_positives ?? 0;
+  if (!m.synthetic && trainPos === 0) {
+    banners.push(`<div class="alert alert-bad">⚠ El conjunto de <b>entrenamiento tiene 0
+      ejemplos positivos</b> (fallas). El modelo no pudo aprender el patrón precursor —
+      las métricas de test serán degeneradas. Se necesitan más eventos de falla reales
+      repartidos en el tiempo (no todos al final del dataset).</div>`);
+  } else if (!m.synthetic && (trainPos < 5 || testPos < 3)) {
+    banners.push(`<div class="alert alert-warn">ℹ Muy pocos ejemplos positivos
+      (train=${trainPos}, val=${valPos}, test=${testPos}). Trátalo como resultado piloto
+      preliminar, de alta varianza — no como validación robusta.</div>`);
+  }
+  document.getElementById("detail-banner").innerHTML = banners.join("");
+
+  document.getElementById("detail-dataset").innerHTML = `
+    Fuente: <b>${m.data_source}</b><br>
+    Filas totales: ${fmt(m.dataset_period?.total_rows)}<br>
+    Desde: ${fmt(m.dataset_period?.start)}<br>
+    Hasta: ${fmt(m.dataset_period?.end)}<br>
+    Commit: <code>${fmt(m.git_commit)}</code>`;
+
+  document.getElementById("detail-labeling").innerHTML = `
+    Filas positivas: ${fmt(lab.positive_rows)} / ${fmt(lab.total_rows)}
+      (${fmt(lab.positive_pct)}%)<br>
+    Fallas distintas (T_f): ${fmt(lab.distinct_failures)}<br>
+    Instantes: ${(m.failure_instants || []).map(t => `<code>${t}</code>`).join("<br>") || "—"}`;
+
+  document.getElementById("detail-split").innerHTML = `
+    <table style="width:100%;font-size:13px">
+      <tr><th></th><th>n</th><th>positivos</th></tr>
+      <tr><td>train</td><td>${fmt(seq.train)}</td><td>${trainPos}</td></tr>
+      <tr><td>val</td><td>${fmt(seq.val)}</td><td>${valPos}</td></tr>
+      <tr><td>test</td><td>${fmt(seq.test)}</td><td>${testPos}</td></tr>
+    </table>
+    Umbral seleccionado: <b>${fmt(m.selected_threshold)}</b>`;
+
+  document.getElementById("detail-confusion").innerHTML = `
+    <table style="width:100%;text-align:center;font-size:13px">
+      <tr><th></th><th>Pred. normal</th><th>Pred. falla</th></tr>
+      <tr><th>Real normal</th><td class="kpi-ok-cell">${fmt(cm.tn)}</td><td>${fmt(cm.fp)}</td></tr>
+      <tr><th>Real falla</th><td>${fmt(cm.fn)}</td><td class="kpi-ok-cell">${fmt(cm.tp)}</td></tr>
+    </table>`;
+
+  const rows = [["LSTM", test]];
+  if (met.baselines?.threshold_rule) rows.push(["Regla de umbral (reactiva)", met.baselines.threshold_rule]);
+  if (met.baselines?.random_forest) rows.push(["Random Forest", met.baselines.random_forest]);
+  document.querySelector("#detail-metrics-table tbody").innerHTML = rows.map(([label, r]) => `
+    <tr><td>${label}</td><td>${fmt(r.accuracy, 3)}</td><td>${fmt(r.precision, 3)}</td>
+      <td>${fmt(r.recall, 3)}</td><td>${fmt(r.f1, 3)}</td><td>${fmt(r.roc_auc, 3)}</td>
+      <td>${fmt(r.pr_auc, 3)}</td><td>${fmt(r.false_alarms_per_day, 2)}</td></tr>`).join("");
+
+  document.getElementById("detail-leadtime").innerHTML = `
+    Eventos evaluados: ${fmt(lt.events_evaluated)} —
+    detectados: ${fmt(lt.events_detected)} —
+    perdidos: ${fmt(lt.events_missed)}<br>
+    Lead time medio: ${fmt(lt.mean_lead_time_minutes)} min
+    (min ${fmt(lt.min_lead_time_minutes)} / max ${fmt(lt.max_lead_time_minutes)})`;
+
+  document.getElementById("detail-json").textContent = JSON.stringify(run, null, 2);
+  document.getElementById("detail-panel").scrollIntoView({behavior: "smooth", block: "start"});
+}
+
 document.addEventListener("DOMContentLoaded", load);
 </script>
 {% endblock %}
