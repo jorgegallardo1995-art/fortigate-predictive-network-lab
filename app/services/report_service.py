@@ -25,6 +25,8 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+import pandas as pd
+
 from app.core.config import get_config, get_settings
 from app.core.logging import get_logger
 from app.core.timeutils import utc_now
@@ -417,6 +419,95 @@ def _loss_chart(history: dict[str, list[float]]):
     return d
 
 
+def _unit_for(col: str) -> str:
+    if col in VAR_META:
+        return VAR_META[col][0]
+    if col.endswith("_latency_ms") or col.endswith("_jitter_ms"):
+        return "ms"
+    if col.endswith("_loss_pct"):
+        return "%"
+    return ""
+
+
+def _variable_chart(
+    times_min: list[float],
+    values: list[float | None],
+    label: str,
+    unit: str,
+    vlines_min: list[float] | None = None,
+    color=None,
+    width: float = 480,
+    height: float = 170,
+) -> Any:
+    """Manual (dependency-free) line chart: draws real gaps where the value is
+    NaN (e.g. during an outage - never interpolated/invented) and dashed
+    vertical markers at each real failure instant (T_f)."""
+    from reportlab.graphics.shapes import Circle, Drawing, Line, PolyLine, String
+
+    color = color or colors.HexColor("#3ea6ff")
+    d = Drawing(width, height)
+    pad_l, pad_r, pad_t, pad_b = 46, 12, 20, 22
+    plot_w = width - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+    ox, oy = pad_l, pad_b
+
+    def _isnan(v: float | None) -> bool:
+        return v is None or (isinstance(v, float) and v != v)
+
+    valid_y = [v for v in values if not _isnan(v)]
+    if not times_min or not valid_y:
+        d.add(String(width / 2 - 30, height / 2, "sin datos", fontSize=8, fillColor=colors.grey))
+        return d
+
+    xmin, xmax = min(times_min), max(times_min)
+    ymin, ymax = min(valid_y), max(valid_y)
+    if xmax == xmin:
+        xmax = xmin + 1.0
+    if ymax == ymin:
+        pad = abs(ymin) * 0.1 or 1.0
+        ymin, ymax = ymin - pad, ymax + pad
+
+    def sx(t: float) -> float:
+        return ox + (t - xmin) / (xmax - xmin) * plot_w
+
+    def sy(v: float) -> float:
+        return oy + (v - ymin) / (ymax - ymin) * plot_h
+
+    d.add(Line(ox, oy, ox + plot_w, oy, strokeColor=colors.HexColor("#c8c8c8")))
+    d.add(Line(ox, oy, ox, oy + plot_h, strokeColor=colors.HexColor("#c8c8c8")))
+    d.add(String(2, oy + plot_h - 3, f"{ymax:.2f}", fontSize=6, fillColor=colors.HexColor("#666")))
+    d.add(String(2, oy, f"{ymin:.2f}", fontSize=6, fillColor=colors.HexColor("#666")))
+    d.add(String(ox, oy - 12, "0 min", fontSize=6, fillColor=colors.HexColor("#666")))
+    d.add(String(ox + plot_w - 34, oy - 12, f"{xmax:.0f} min", fontSize=6, fillColor=colors.HexColor("#666")))
+    unit_txt = f" ({unit})" if unit else ""
+    d.add(String(ox, height - 11, f"{label}{unit_txt}", fontSize=8, fillColor=colors.HexColor("#222")))
+
+    for vt in vlines_min or []:
+        if xmin <= vt <= xmax:
+            ln = Line(sx(vt), oy, sx(vt), oy + plot_h, strokeColor=colors.HexColor("#f85149"), strokeWidth=0.6)
+            ln.strokeDashArray = [2, 2]
+            d.add(ln)
+
+    run: list[tuple[float, float]] = []
+    for t, v in zip(times_min, values, strict=True):
+        if _isnan(v):
+            if len(run) >= 2:
+                d.add(PolyLine([c for pt in run for c in (sx(pt[0]), sy(pt[1]))],
+                                strokeColor=color, strokeWidth=1))
+            elif len(run) == 1:
+                d.add(Circle(sx(run[0][0]), sy(run[0][1]), 1.1, fillColor=color, strokeColor=color))
+            run = []
+        else:
+            run.append((t, v))
+    if len(run) >= 2:
+        d.add(PolyLine([c for pt in run for c in (sx(pt[0]), sy(pt[1]))],
+                        strokeColor=color, strokeWidth=1))
+    elif len(run) == 1:
+        d.add(Circle(sx(run[0][0]), sy(run[0][1]), 1.1, fillColor=color, strokeColor=color))
+
+    return d
+
+
 def build_run_report(run_id: str) -> Any:
     """Full documentation PDF for one ml/train.py run: architecture, pipeline code
     summary, dataset/labeling used, training curve, confusion matrix and metrics.
@@ -633,6 +724,52 @@ def build_run_report(run_id: str) -> Any:
          str(lt.get("events_missed", 0)), _fmt(lt.get("mean_lead_time_minutes")),
          _fmt(lt.get("min_lead_time_minutes")), _fmt(lt.get("max_lead_time_minutes"))],
     ], [30 * mm, 25 * mm, 22 * mm, 30 * mm, 20 * mm, 20 * mm])
+
+    # --- 6. per-variable time series (one chart per input variable, for the thesis) ---
+    S.append(PageBreak())
+    p("6. Series temporales de las variables de entrada", h2)
+    p("Una serie por variable de entrada del modelo, sobre la misma ventana de datos usada en "
+      "esta corrida (misma fuente y periodo que la seccion 3). Los huecos en la linea son reales "
+      "(sin dato disponible, p. ej. durante una caida) - nunca se interpola ni se inventa. Las "
+      "lineas rojas punteadas marcan los instantes de falla (T_f) reales de esta corrida.",
+      styles["Small"])
+    S.append(Spacer(1, 2 * mm))
+
+    feature_cols = meta.get("feature_columns", [])
+    chart_df = None
+    try:
+        from ml.data_loading import load_dataset
+
+        chart_df = load_dataset(str(get_settings().database_path), meta.get("data_source", "REAL"),
+                                 since=period.get("start"))
+        if period.get("end"):
+            chart_df = chart_df[chart_df["timestamp_utc"] <= pd.Timestamp(period["end"])]
+    except Exception:
+        logger.exception("could not reload raw data for per-variable charts in run report")
+
+    if chart_df is not None and len(chart_df) and feature_cols:
+        t0 = chart_df["timestamp_utc"].iloc[0]
+        times_min = [(t - t0).total_seconds() / 60.0 for t in chart_df["timestamp_utc"]]
+        fail_min = []
+        for iso in meta.get("failure_instants", []):
+            try:
+                fail_min.append((pd.Timestamp(iso) - t0).total_seconds() / 60.0)
+            except (ValueError, TypeError):
+                pass
+
+        for i, col in enumerate(feature_cols):
+            if col not in chart_df.columns:
+                p(f"{col}: columna no disponible en los datos actuales (omitida).", styles["Small"])
+                continue
+            values = [float(v) if pd.notna(v) else None for v in chart_df[col]]
+            S.append(_variable_chart(times_min, values, col, _unit_for(col), vlines_min=fail_min))
+            S.append(Spacer(1, 2 * mm))
+            if i < len(feature_cols) - 1:
+                S.append(PageBreak())
+    else:
+        p("No fue posible recuperar los datos crudos de esta ventana para graficar "
+          "(base de datos actual no cubre el periodo, o sin variables de entrada registradas).",
+          styles["Small"])
 
     doc.build(S, onFirstPage=_footer, onLaterPages=_footer)
     logger.info("model run report written: %s (%d KB)", path.name, path.stat().st_size // 1024)
