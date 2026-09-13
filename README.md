@@ -228,11 +228,35 @@ lost samples, completeness %. Visible on `/research`, in `GET /api/research/meta
 `database_schema_version`, Python version, OS, hardware. No secrets. Use it to
 document each experimental run in the thesis.
 
+## 21. Continuity & availability
+
+`GET /api/availability/summary` / `/timeline` and the `/availability` dashboard
+page expose a **gap-free** minute-by-minute record (`availability_timeline`):
+`collector_up`, `network_up` (NULL while the collector was down - never assumed),
+and `reason` per slot. Export it with `GET /api/export/availability`. Gaps are
+classified `POWER_FAILURE` / `SYSTEM_REBOOT` (host rebooted) vs
+`COLLECTOR_FAILURE` / `FORTIGATE_UNREACHABLE` (host stayed up) automatically from
+`/proc/stat` boot time; `PATCH /api/gaps/{id}` corrects a cause manually when the
+operator knows more than the heuristic does.
+
+## 22. LSTM model (`ml/`)
+
+The deep-learning pipeline described in the thesis's methodology chapter lives in
+a **separate package, `ml/`, that trains on your Mac or Colab - never on the
+Raspberry Pi**. See [`ml/README.md`](ml/README.md) for the full workflow
+(getting a local copy of the DB, registering controlled experiments with
+`POST /api/experiments/<id>/failure` to create real ground truth, training,
+evaluating against baselines). The dashboard's **Modelo LSTM** page (`/model`,
+`GET /api/model/status`) shows whether the dataset has any labeled failures yet
+and lists past training runs - it has no TensorFlow dependency, so it runs fine
+on the Pi even though training never does.
+
 ---
 
 ### Project stages
 
 1–4 (structure, config, DB, FortiGateClient) and 7–14 in MOCK: **done**.
-5–6 (real FortiGate connection & endpoint validation): needs the FortiOS version
-and the token in `.env`. 15–17 (Raspberry deployment & 24/7 validation): scripts
-and unit ready.
+5–6 (real FortiGate connection & endpoint validation): **done** (FGT-50E,
+FortiOS 6.0.4). 15–17 (Raspberry deployment & 24/7 validation): **done**, running
+in production with a watchdog. LSTM (`ml/`): pipeline **done**; real training is
+blocked on ground truth - see §22.

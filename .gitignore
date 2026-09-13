@@ -12,6 +12,12 @@ data/backups/*
 !data/exports/.gitkeep
 !data/backups/.gitkeep
 
+# ML training runs (models, scalers, histories) - regenerate with ml/train.py.
+# Keep run_metadata.json/metrics.json out too; publish results deliberately
+# (see ml/README.md) rather than via git.
+data/models/*
+!data/models/.gitkeep
+
 # --- Logs ---
 logs/*.log
 logs/*.log.*

@@ -20,6 +20,9 @@ ignore = ["B008"]  # FastAPI Depends() in argument defaults
 "tests/*" = ["S101"]
 # standalone scripts insert the repo root on sys.path before importing the app
 "scripts/*.py" = ["E402", "I001"]
+# ML code follows the universal X/y (features/target) convention, not snake_case
+"ml/*.py" = ["N803", "N806"]
+"tests/ml/*.py" = ["N803", "N806"]
 
 [tool.mypy]
 python_version = "3.11"

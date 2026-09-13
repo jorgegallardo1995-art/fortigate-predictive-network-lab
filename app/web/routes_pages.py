@@ -53,6 +53,11 @@ def availability(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "availability.html", _base_context("availability"))
 
 
+@router.get("/model", response_class=HTMLResponse)
+def model_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "model.html", _base_context("model"))
+
+
 @router.get("/events", response_class=HTMLResponse)
 def events(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "events.html", _base_context("events"))

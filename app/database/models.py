@@ -458,6 +458,10 @@ class Experiment(Base):
     scenario: Mapped[str] = mapped_column(String(32))
     start_timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     end_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Instant of the actual failure/degradation onset within the experiment window
+    # (per thesis §3.16.7/§3.16.8) - the ML labeling ground truth T_f. Set manually
+    # by the operator; never inferred automatically.
+    failure_timestamp: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     operator: Mapped[str | None] = mapped_column(String(128), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block heading %}Modelo LSTM — predicción temprana de fallas{% endblock %}
+
+{% block content %}
+<section class="panel">
+  <p class="muted">
+    El entrenamiento corre en <b>ml/</b> (Mac/Colab) — nunca en la Raspberry.
+    Esta página solo lee el estado del dataset y, si copiaste una corrida,
+    sus resultados (<code>data/models/&lt;run_id&gt;/</code>).
+  </p>
+</section>
+
+<section class="kpi-row" id="readiness-row"></section>
+
+<section class="panel" id="pending-panel" hidden>
+  <h2>Experimentos sin T_f registrado</h2>
+  <p class="muted">Estos experimentos aún no tienen <code>failure_timestamp</code> —
+    llama a <code>POST /api/experiments/&lt;id&gt;/failure</code> para cerrarlos.</p>
+  <ul id="pending-list" class="chips chips-muted"></ul>
+</section>
+
+<section class="panel">
+  <h2>Corridas de entrenamiento</h2>
+  <div id="runs-empty" class="muted" hidden>
+    Sin corridas todavía. Ejecuta <code>python -m ml.train --synthetic-demo</code> para
+    probar el pipeline, o <code>python -m ml.train --db data/fortigate.db</code> cuando
+    haya fallas etiquetadas.
+  </div>
+  <div class="table-wrap">
+    <table id="runs-table" hidden>
+      <thead><tr><th>run_id</th><th>fuente</th><th>secuencias (train/val/test)</th>
+        <th>positivos</th><th>umbral</th><th>F1 test</th><th>ROC-AUC</th>
+        <th>Lead time medio</th><th></th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+
+<section class="panel" id="detail-panel" hidden>
+  <h2>Detalle de la corrida</h2>
+  <pre id="detail-json" style="white-space:pre-wrap;font-size:12px;max-height:480px;overflow:auto"></pre>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function load() {
+  const d = await PNLApi.get("/api/model/status");
+  const r = d.readiness;
+
+  const kv = (label, val, ok) => `<div class="kpi ${ok===null?'':ok?'kpi-ok':'kpi-bad'}">
+    <span class="kpi-label">${label}</span><span class="kpi-value">${val}</span></div>`;
+  document.getElementById("readiness-row").innerHTML =
+    kv("Listo para entrenar", r.ready_to_train ? "SÍ" : "NO", r.ready_to_train) +
+    kv("Experimentos con T_f", r.labeled_experiments, r.labeled_experiments > 0) +
+    kv("Eventos de falla (WAN_DOWN/SLA_FAILED)", r.failure_events_logged, r.failure_events_logged > 0) +
+    kv("Total experimentos", r.total_experiments, null);
+
+  if (r.experiments_missing_failure_timestamp.length) {
+    document.getElementById("pending-panel").hidden = false;
+    document.getElementById("pending-list").innerHTML =
+      r.experiments_missing_failure_timestamp.map(id => `<li>${id}</li>`).join("");
+  }
+
+  if (!d.runs.length) {
+    document.getElementById("runs-empty").hidden = false;
+    return;
+  }
+  document.getElementById("runs-table").hidden = false;
+  document.querySelector("#runs-table tbody").innerHTML = d.runs.map(run => {
+    const m = run.metadata, met = run.metrics || {};
+    const test = met.lstm_test || {};
+    const lt = met.lead_time || {};
+    const seq = m.sequences || {};
+    const badge = m.synthetic ? ' <span class="badge badge-mock">DEMO</span>' : "";
+    return `<tr>
+      <td>${m.run_id}${badge}</td>
+      <td>${m.data_source}</td>
+      <td>${seq.train ?? "—"}/${seq.val ?? "—"}/${seq.test ?? "—"}</td>
+      <td>${seq.train_positives ?? 0}/${seq.val_positives ?? 0}/${seq.test_positives ?? 0}</td>
+      <td>${m.selected_threshold ?? "—"}</td>
+      <td>${test.f1 !== undefined ? test.f1.toFixed(3) : "—"}</td>
+      <td>${test.roc_auc !== undefined && test.roc_auc !== null ? test.roc_auc.toFixed(3) : "—"}</td>
+      <td>${lt.mean_lead_time_minutes ?? "—"} min</td>
+      <td><a href="#" data-run="${m.run_id}">ver</a></td>
+    </tr>`;
+  }).join("");
+
+  document.querySelectorAll("[data-run]").forEach(a => a.addEventListener("click", async e => {
+    e.preventDefault();
+    const run = await PNLApi.get(`/api/model/runs/${a.dataset.run}`);
+    document.getElementById("detail-panel").hidden = false;
+    document.getElementById("detail-json").textContent = JSON.stringify(run, null, 2);
+  }));
+}
+document.addEventListener("DOMContentLoaded", load);
+</script>
+{% endblock %}

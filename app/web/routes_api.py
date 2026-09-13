@@ -154,6 +154,28 @@ def availability_rebuild(full: bool = False) -> dict[str, Any]:
 
 
 # --- technical report -----------------------------------------------------
+@router.get("/model/status")
+def model_status(session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Readiness of the dataset for ml/train.py + the list of past training runs
+    (read from data/models/, if any were copied here). No TensorFlow dependency."""
+    from app.services import model_service
+
+    return {
+        "readiness": model_service.training_readiness(session),
+        "runs": model_service.list_runs(),
+    }
+
+
+@router.get("/model/runs/{run_id}")
+def model_run(run_id: str) -> dict[str, Any]:
+    from app.services import model_service
+
+    run = model_service.get_run(run_id)
+    if run is None:
+        raise HTTPException(404, "run not found")
+    return run
+
+
 @router.get("/report/technical.pdf")
 def technical_report(data_source: str | None = None) -> Any:
     """Full dataset briefing (variables, stats, features, availability, LSTM guide)."""
@@ -238,8 +260,13 @@ class ExperimentIn(BaseModel):
     description: str | None = None
     start_timestamp: datetime | None = None
     end_timestamp: datetime | None = None
+    failure_timestamp: datetime | None = None
     notes: str | None = None
     operator: str | None = None
+
+
+class ExperimentFailureIn(BaseModel):
+    failure_timestamp: datetime
 
 
 @router.get("/experiments")
@@ -252,6 +279,7 @@ def get_experiments(session: Session = Depends(get_session)) -> list[dict[str, A
             "description": e.description,
             "start_timestamp": e.start_timestamp.isoformat(),
             "end_timestamp": e.end_timestamp.isoformat() if e.end_timestamp else None,
+            "failure_timestamp": e.failure_timestamp.isoformat() if e.failure_timestamp else None,
             "operator": e.operator,
             "notes": e.notes,
         }
@@ -273,6 +301,7 @@ def create_experiment(payload: ExperimentIn) -> dict[str, Any]:
             description=payload.description,
             start_timestamp=payload.start_timestamp or utc_now(),
             end_timestamp=payload.end_timestamp,
+            failure_timestamp=payload.failure_timestamp,
             notes=payload.notes,
             operator=payload.operator,
             created_at=utc_now(),
@@ -297,6 +326,22 @@ def close_experiment(experiment_id: str) -> dict[str, Any]:
         record_event(session, "EXPERIMENT_END", f"Experiment {experiment_id} closed",
                      experiment_id=experiment_id)
     return {"closed": experiment_id}
+
+
+@router.post("/experiments/{experiment_id}/failure")
+def mark_experiment_failure(experiment_id: str, payload: ExperimentFailureIn) -> dict[str, Any]:
+    """Register T_f (the failure onset instant) for a controlled experiment - the
+    ML ground truth used by ml/labeling.py. Never inferred automatically."""
+    with session_scope() as session:
+        exp = session.query(Experiment).filter_by(experiment_id=experiment_id).first()
+        if not exp:
+            raise HTTPException(404, "not found")
+        exp.failure_timestamp = payload.failure_timestamp
+        from app.services.event_service import record_event
+
+        record_event(session, "SLA_FAILED", f"Controlled failure marked for {experiment_id}",
+                     severity="CRITICAL", experiment_id=experiment_id)
+    return {"experiment_id": experiment_id, "failure_timestamp": payload.failure_timestamp.isoformat()}
 
 
 # --- research / metadata --------------------------------------------
