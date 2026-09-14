@@ -82,6 +82,16 @@ class CollectorScheduler:
             next_run_time=utc_now(),
             replace_existing=True,
         )
+        self._scheduler.add_job(
+            self._run_auto_experiment_detection,
+            trigger=IntervalTrigger(
+                seconds=int(self.cfg.get("auto_experiments.interval_seconds", 600))
+            ),
+            id="auto_experiment_detection",
+            name="Auto experiment detection",
+            next_run_time=utc_now(),
+            replace_existing=True,
+        )
         if self.cfg.get("backup.enabled", True):
             self._scheduler.add_job(
                 self._run_backup,
@@ -172,6 +182,16 @@ class CollectorScheduler:
                 logger.debug("availability timeline: %d slots", n)
         except Exception:
             logger.exception("availability rebuild failed")
+
+    def _run_auto_experiment_detection(self) -> None:
+        try:
+            from app.services.auto_experiment_detector import detect_and_register
+
+            created = detect_and_register()
+            if created:
+                logger.info("auto-registered %d experiment(s): %s", len(created), created)
+        except Exception:
+            logger.exception("auto experiment detection failed")
 
     def _run_backup(self) -> None:
         try:
