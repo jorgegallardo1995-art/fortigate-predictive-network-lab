@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from app.core.logging import get_logger
 from app.core.timeutils import utc_now
@@ -25,7 +25,6 @@ logger = get_logger("auto_experiment_detector")
 
 LOOKBACK = timedelta(hours=8)
 RECOVERY_CONFIRM_ROWS = 2  # consecutive "up" rows required before a down-run counts as finished
-DEDUPE_TOLERANCE = timedelta(minutes=5)
 
 
 def detect_and_register(data_source: str = DATA_SOURCE_REAL) -> list[str]:
@@ -61,12 +60,17 @@ def detect_and_register(data_source: str = DATA_SOURCE_REAL) -> list[str]:
                     down_end = None
             # any other/NULL state: ignore, keep the current run (if any) open
 
+        buffer = timedelta(minutes=2)  # touching/adjacent counts as the same outage
         for start, end in runs:
             existing = session.execute(
                 select(Experiment).where(
-                    Experiment.failure_timestamp.isnot(None),
-                    Experiment.failure_timestamp >= start - DEDUPE_TOLERANCE,
-                    Experiment.failure_timestamp <= start + DEDUPE_TOLERANCE,
+                    and_(
+                        Experiment.start_timestamp <= end + buffer,
+                        or_(
+                            Experiment.end_timestamp.is_(None),
+                            Experiment.end_timestamp >= start - buffer,
+                        ),
+                    )
                 )
             ).scalars().first()
             if existing:

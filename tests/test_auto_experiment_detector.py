@@ -86,3 +86,38 @@ def test_does_not_duplicate_an_existing_experiment(session) -> None:
 
     assert created == []
     assert session.query(Experiment).count() == 1
+
+
+def test_lookback_sliding_past_an_old_outage_does_not_fragment_it(session, monkeypatch) -> None:
+    """Regression test: a real incident. As LOOKBACK slides forward past an
+    already-recorded, already-recovered outage, the earliest still-visible
+    "down" row must NOT be mistaken for a new failure - it's the tail of one
+    already covered by an existing experiment. This is exactly what happened
+    live: a single 78-minute outage was rediscovered 11 extra times, each
+    "start" a few minutes later than the last, as the 8h lookback swept
+    through it - because the old proximity-only dedupe only looked within
+    +-5 min of failure_timestamp, not whether the two windows overlapped."""
+    import app.services.auto_experiment_detector as det
+
+    now = utc_now()
+    down_start = now - timedelta(hours=10)
+    for i in range(20):
+        _sla_row(session, down_start + timedelta(minutes=i), "down")
+    recovered_at = down_start + timedelta(minutes=20)
+    for i in range(3):
+        _sla_row(session, recovered_at + timedelta(minutes=i), "up")
+    session.commit()
+
+    # First pass: LOOKBACK covers the whole thing -> registers exactly once.
+    monkeypatch.setattr(det, "LOOKBACK", timedelta(hours=11))
+    first = det.detect_and_register()
+    assert len(first) == 1
+
+    # Second pass: LOOKBACK has since shrunk (simulating real time passing)
+    # so "since" now falls in the MIDDLE of the already-recorded down run -
+    # the algorithm sees a "new" down_start partway through it.
+    monkeypatch.setattr(det, "LOOKBACK", timedelta(hours=9, minutes=45))
+    second = det.detect_and_register()
+
+    assert second == [], f"must not re-fragment an already-recorded outage, got {second}"
+    assert session.query(Experiment).count() == 1
