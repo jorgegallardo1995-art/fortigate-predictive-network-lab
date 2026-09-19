@@ -104,6 +104,18 @@ class CollectorScheduler:
                 name="Daily database backup",
                 replace_existing=True,
             )
+        if self.cfg.get("retention.enabled", True):
+            self._scheduler.add_job(
+                self._run_raw_json_retention,
+                trigger=CronTrigger(
+                    hour=int(self.cfg.get("retention.schedule_hour", 3)),
+                    minute=int(self.cfg.get("retention.schedule_minute", 30)),
+                    timezone="UTC",
+                ),
+                id="raw_json_retention",
+                name="Raw JSON retention",
+                replace_existing=True,
+            )
 
         self._scheduler.add_listener(self._on_job_problem, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
         self._scheduler.start()
@@ -192,6 +204,16 @@ class CollectorScheduler:
                 logger.info("auto-registered %d experiment(s): %s", len(created), created)
         except Exception:
             logger.exception("auto experiment detection failed")
+
+    def _run_raw_json_retention(self) -> None:
+        try:
+            from app.services.retention_service import prune_raw_json
+
+            result = prune_raw_json()
+            if result["pruned_rows"]:
+                logger.info("raw_json retention: %s", result)
+        except Exception:
+            logger.exception("raw_json retention failed")
 
     def _run_backup(self) -> None:
         try:

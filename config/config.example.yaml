@@ -107,6 +107,15 @@ backup:
   keep_days: 7
   filename_prefix: "fortigate_"
 
+# Clears raw_json (the large raw API payload) on telemetry_raw rows older than
+# raw_json_keep_days - the live DB is not the archive, the daily backups above
+# are. Never touches any structured/derived column. Keep less than backup.keep_days.
+retention:
+  enabled: true
+  schedule_hour: 3
+  schedule_minute: 30
+  raw_json_keep_days: 3
+
 # --- Dashboard behaviour --------------------------------------------------
 dashboard:
   refresh_interval_seconds: 30
