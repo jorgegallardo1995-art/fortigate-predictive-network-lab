@@ -17,10 +17,15 @@ class ModelConfig:
     n_features: int = 23              # §3.16.4 - see ml/variables.py
 
     # --- architecture (§3.16.12) ---
+    # "reference" = the thesis's exact 35,489-param model. "bidirectional" = an
+    # improved variant (BiLSTM + recurrent dropout) evaluated against it and the
+    # baselines; the reference stays the default so §3.16.21 keeps reproducing.
+    variant: str = "reference"
     lstm1_units: int = 64
     lstm2_units: int = 32
     dense_units: int = 16
     dropout: float = 0.20
+    recurrent_dropout: float = 0.10
     dense_activation: str = "relu"
     output_activation: str = "sigmoid"
 

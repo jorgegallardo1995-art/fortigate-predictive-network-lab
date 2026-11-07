@@ -215,6 +215,27 @@ wan_control:
   ramp_random_count: 6          # ramps per day (randomised times)
   ramp_random_min_gap_hours: 2  # minimum spacing between ramps
 
+# --- Injected latency / loss degradation (tc netem on the Pi) --------------------
+# Gives the reviewer's LATENCY_DEGRADATION / PACKET_LOSS scenarios (Bloque 2): a
+# precursor ramp of delay+loss on eth0, then restore. OFF by default; the ramp
+# always clears itself (finally + on startup). Caps bound how bad it can get so
+# the Pi stays reachable.
+netem:
+  enabled: false
+  interface: eth0
+  scenario: LATENCY_DEGRADATION
+  step_seconds: 120
+  failure_at_delay_ms: 150        # T_f = first step whose delay reaches this
+  max_delay_ms: 500               # safety cap
+  max_loss_pct: 20                # safety cap
+  schedule_enabled: false         # manual-first; enable to run on a schedule
+  profile:
+    - {delay_ms: 0,   jitter_ms: 0,  loss_pct: 0}
+    - {delay_ms: 30,  jitter_ms: 10, loss_pct: 0.5}
+    - {delay_ms: 80,  jitter_ms: 20, loss_pct: 1}
+    - {delay_ms: 150, jitter_ms: 40, loss_pct: 3}
+    - {delay_ms: 0,   jitter_ms: 0,  loss_pct: 0}
+
 # --- Dashboard behaviour --------------------------------------------------
 dashboard:
   refresh_interval_seconds: 30

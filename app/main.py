@@ -41,6 +41,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
     close_orphans()
     restore_on_startup()  # a crash mid-outage must never leave the WAN down
+    from app.services.netem_degradation_service import restore_on_startup as netem_restore
+
+    netem_restore()  # a crash must never leave tc netem degrading the link
 
     scheduler = None
     if settings.run_scheduler:

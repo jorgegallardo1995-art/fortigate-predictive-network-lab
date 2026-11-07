@@ -125,7 +125,7 @@ def availability_summary(
     from app.services import availability_service
 
     return availability_service.summary(
-        session, data_source or _default_source(), _RANGE_HOURS.get(range, None)
+        session, data_source or _default_source(), _RANGE_HOURS.get(range)
     )
 
 
@@ -248,6 +248,45 @@ def run_speedtest_now() -> dict[str, Any]:
     if result.get("skipped"):
         raise HTTPException(409, "a speed test is already running")
     return result
+
+
+# --- Injected latency/loss degradation (tc netem) --------------------------
+class NetemStartIn(BaseModel):
+    profile: list[dict] | None = None
+    step_seconds: int | None = None
+
+
+@router.get("/netem/status")
+def netem_status() -> dict[str, Any]:
+    from app.services import netem_degradation_service as ns
+
+    return ns.status()
+
+
+@router.get("/netem/runs")
+def netem_runs(hours: int = 720) -> list[dict[str, Any]]:
+    from app.services import netem_degradation_service as ns
+
+    return ns.list_runs(utc_now() - timedelta(hours=hours))
+
+
+@router.post("/netem/start", status_code=202)
+def netem_start(payload: NetemStartIn | None = None) -> dict[str, Any]:
+    """Start an injected latency/loss degradation ramp (tc netem on the Pi)."""
+    from app.services import netem_degradation_service as ns
+
+    p = payload or NetemStartIn()
+    try:
+        return ns.start(p.profile, step_seconds=p.step_seconds)
+    except ns.NetemError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/netem/stop")
+def netem_stop() -> dict[str, Any]:
+    from app.services import netem_degradation_service as ns
+
+    return ns.stop()
 
 
 # --- WAN fault injection ---------------------------------------------------

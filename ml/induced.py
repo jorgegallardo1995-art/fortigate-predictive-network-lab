@@ -74,8 +74,16 @@ def _is_induced_outage(experiment_id: object, notes: object) -> bool:
     )
 
 
+# Degradation experiments carry a precursor ramp before T_f (shaper congestion
+# or injected latency/loss). Their pre-T_f ramp is kept as the positive signal;
+# only the post-T_f tail + recovery are excluded (handled like a congestion tail).
+DEGRADATION_SCENARIOS = ("CONGESTION", "LATENCY_DEGRADATION", "PACKET_LOSS")
+
+
 def _is_congestion(experiment_id: object, scenario: object) -> bool:
-    return str(experiment_id).startswith(CONGESTION_EXPERIMENT_PREFIX) or scenario == "CONGESTION"
+    eid = str(experiment_id)
+    return (eid.startswith(CONGESTION_EXPERIMENT_PREFIX) or eid.startswith("EXP-NETEM-")
+            or scenario in DEGRADATION_SCENARIOS)
 
 
 def build_induced_plan(

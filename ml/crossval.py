@@ -197,6 +197,8 @@ def parse_args(argv=None):
     p.add_argument("--margin-minutes", type=int, default=None,
                    help="exclusion margin between train and test (default: window+horizon)")
     p.add_argument("--max-epochs", type=int, default=None)
+    p.add_argument("--variant", choices=["reference", "bidirectional"], default=None,
+                   help="LSTM architecture variant (default: config's 'reference')")
     p.add_argument("--output", default=None, help="write the JSON report here")
     return p.parse_args(argv)
 
@@ -204,10 +206,11 @@ def parse_args(argv=None):
 def main(argv=None) -> int:
     args = parse_args(argv)
     cfg = DEFAULT_CONFIG
+    from dataclasses import replace
     if args.max_epochs is not None:
-        from dataclasses import replace
-
         cfg = replace(cfg, max_epochs=args.max_epochs)
+    if args.variant is not None:
+        cfg = replace(cfg, variant=args.variant)
     margin = args.margin_minutes if args.margin_minutes is not None else (
         cfg.window_minutes + cfg.horizon_minutes)
 
@@ -248,7 +251,7 @@ def main(argv=None) -> int:
     }
     report = {
         "generated_at": datetime.now(UTC).isoformat(),
-        "config": {"folds": len(folds), "margin_minutes": margin,
+        "config": {"folds": len(folds), "margin_minutes": margin, "variant": cfg.variant,
                    "window_minutes": cfg.window_minutes, "horizon_minutes": cfg.horizon_minutes},
         "pooled": pooled,
         "folds": fold_results,
