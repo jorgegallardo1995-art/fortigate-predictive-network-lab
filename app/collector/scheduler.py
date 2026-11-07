@@ -211,6 +211,16 @@ class CollectorScheduler:
                     misfire_grace_time=300, replace_existing=True,
                 )
 
+        if self.cfg.get("netem.enabled", False) and self.cfg.get("netem.schedule_enabled", False):
+            # Injected latency/loss ramps at randomised times too (Bloque 2).
+            self._scheduler.add_job(
+                self._plan_random_netem,
+                trigger=CronTrigger(hour=0, minute=8, timezone="UTC"),
+                id="plan_random_netem", name="Plan randomised netem",
+                misfire_grace_time=600, replace_existing=True,
+            )
+            self._plan_random_netem()
+
         self._scheduler.add_listener(self._on_job_problem, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
         self._scheduler.start()
         self._running = True
@@ -359,27 +369,46 @@ class CollectorScheduler:
 
     def _plan_random_ramps(self) -> None:
         """Schedule today's remaining ramps at randomised times (Bloque 2)."""
+        self._plan_random("ramp", self._run_scheduled_ramp,
+                          int(self.cfg.get("wan_control.ramp_random_count", 6)),
+                          float(self.cfg.get("wan_control.ramp_random_min_gap_hours", 2)))
+
+    def _plan_random_netem(self) -> None:
+        """Schedule today's injected latency/loss ramps at randomised times."""
+        self._plan_random("netem", self._run_scheduled_netem,
+                          int(self.cfg.get("netem.random_count", 3)),
+                          float(self.cfg.get("netem.random_min_gap_hours", 3)))
+
+    def _plan_random(self, kind: str, fn, count: int, gap: float) -> None:
         try:
             now = utc_now()
             day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-            count = int(self.cfg.get("wan_control.ramp_random_count", 6))
-            gap = float(self.cfg.get("wan_control.ramp_random_min_gap_hours", 2))
-            times = plan_ramp_times(day_start, count, gap, _random.Random(now.timetuple().tm_yday))
+            # Seed per day AND per kind so ramps and netem get different times.
+            seed = now.timetuple().tm_yday * 10 + (0 if kind == "ramp" else 7)
+            times = plan_ramp_times(day_start, count, gap, _random.Random(seed))
             scheduled = 0
             for t in times:
                 if t <= now + timedelta(seconds=30):
-                    continue  # already past for today
+                    continue
                 self._scheduler.add_job(
-                    self._run_scheduled_ramp,
-                    trigger=DateTrigger(run_date=t),
-                    id=f"ramp_rand_{t:%Y%m%dT%H%M}",
-                    name="Randomised shaper ramp",
+                    fn, trigger=DateTrigger(run_date=t),
+                    id=f"{kind}_rand_{t:%Y%m%dT%H%M}",
+                    name=f"Randomised {kind}",
                     misfire_grace_time=600, replace_existing=True,
                 )
                 scheduled += 1
-            logger.info("planned %d randomised ramp(s) for today (%d total times)", scheduled, len(times))
+            logger.info("planned %d randomised %s(s) for today (%d total times)",
+                        scheduled, kind, len(times))
         except Exception:
-            logger.exception("could not plan randomised ramps")
+            logger.exception("could not plan randomised %s", kind)
+
+    def _run_scheduled_netem(self) -> None:
+        try:
+            from app.services import netem_degradation_service as ns
+
+            ns.start(trigger="scheduled")
+        except Exception:
+            logger.info("scheduled netem skipped: another fault active or disabled")
 
     def _on_job_problem(self, event: Any) -> None:
         logger.warning("APScheduler job problem: %s", event)

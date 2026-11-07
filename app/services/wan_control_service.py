@@ -166,6 +166,10 @@ def start_bandwidth_ramp(
     with _lock:
         if is_running():
             raise WanControlError("a WAN fault is already active")
+        from app.services import netem_degradation_service
+
+        if netem_degradation_service.is_running():
+            raise WanControlError("a netem degradation is active - retry later")
         settings = get_settings()
         data_source = DATA_SOURCE_MOCK if settings.mock_mode else DATA_SOURCE_REAL
         now = utc_now()
@@ -333,7 +337,7 @@ def status() -> dict[str, Any]:
     live = is_running()
     return {
         "running": live,
-        **({k: v for k, v in _status.items()} if live else {}),
+        **(dict(_status) if live else {}),
         "enabled": bool(cfg.get("wan_control.enabled", False)),
         "configured": settings.mock_mode or _control_client().configured,
         "mock_mode": settings.mock_mode,

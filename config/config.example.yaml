@@ -200,7 +200,9 @@ netem:
   failure_at_delay_ms: 150        # T_f = first step whose delay reaches this
   max_delay_ms: 500               # safety cap
   max_loss_pct: 20                # safety cap
-  schedule_enabled: false         # manual-first; enable to run on a schedule
+  schedule_enabled: false         # set true for randomised times each day
+  random_count: 3                 # latency/loss ramps per day
+  random_min_gap_hours: 3
   profile:
     - {delay_ms: 0,   jitter_ms: 0,  loss_pct: 0}
     - {delay_ms: 30,  jitter_ms: 10, loss_pct: 0.5}

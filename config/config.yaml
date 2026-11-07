@@ -221,14 +221,16 @@ wan_control:
 # always clears itself (finally + on startup). Caps bound how bad it can get so
 # the Pi stays reachable.
 netem:
-  enabled: false
+  enabled: true
   interface: eth0
   scenario: LATENCY_DEGRADATION
   step_seconds: 120
   failure_at_delay_ms: 150        # T_f = first step whose delay reaches this
   max_delay_ms: 500               # safety cap
   max_loss_pct: 20                # safety cap
-  schedule_enabled: false         # manual-first; enable to run on a schedule
+  schedule_enabled: true          # randomised times each day (Bloque 2)
+  random_count: 3                 # latency/loss ramps per day
+  random_min_gap_hours: 3
   profile:
     - {delay_ms: 0,   jitter_ms: 0,  loss_pct: 0}
     - {delay_ms: 30,  jitter_ms: 10, loss_pct: 0.5}
