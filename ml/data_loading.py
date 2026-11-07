@@ -107,6 +107,26 @@ def load_experiments(db_path: str | Path) -> pd.DataFrame:
     return df
 
 
+def load_speed_tests(db_path: str | Path, data_source: str = "REAL") -> pd.DataFrame:
+    """[started_at, finished_at] of every active speed test - the self-inflicted
+    saturation windows to exclude from the organic baseline. Returns an empty
+    frame if the table does not exist (older DB copies)."""
+    query = """
+        SELECT started_at, finished_at, trigger FROM speed_tests
+        WHERE data_source = ? ORDER BY started_at
+    """
+    try:
+        with _connect(db_path) as conn:
+            df = pd.read_sql_query(
+                query, conn, params=(data_source,), parse_dates=["started_at", "finished_at"]
+            )
+    except (sqlite3.OperationalError, pd.errors.DatabaseError):
+        return pd.DataFrame(columns=["started_at", "finished_at", "trigger"])
+    for col in ("started_at", "finished_at"):
+        df[col] = pd.to_datetime(df[col], utc=True)
+    return df
+
+
 def load_network_events(db_path: str | Path, event_types: tuple[str, ...]) -> pd.DataFrame:
     placeholders = ",".join("?" * len(event_types))
     query = f"""

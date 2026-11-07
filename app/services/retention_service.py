@@ -8,9 +8,10 @@ the ones the dashboard and ml/ actually read - untouched. raw_json itself is
 deferred (never auto-loaded) and not part of ml/data_loading.py's column set,
 so this has zero effect on dataset statistics or model training.
 
-Runs daily, safely after the backup: as long as raw_json_keep_days is less
-than backup.keep_days, every row about to be pruned here was already
-captured whole by an earlier daily backup.
+Runs daily, after the backup. It never clears a row newer than the start of
+the newest valid backup (backup_service.latest_backup_time), so every
+payload it removes is already inside a backup - even when backups have been
+failing (e.g. disk full). With no valid backup at all it prunes nothing.
 """
 
 from __future__ import annotations
@@ -30,9 +31,21 @@ logger = get_logger("retention")
 
 
 def prune_raw_json(keep_days: int | None = None) -> dict[str, Any]:
+    from app.services.backup_service import latest_backup_time
+
     cfg = get_config()
     days = keep_days if keep_days is not None else int(cfg.get("retention.raw_json_keep_days", 3))
     cutoff = utc_now() - timedelta(days=days)
+    covered_until = latest_backup_time()
+    if covered_until is None:
+        logger.warning("retention skipped: no valid backup yet, raw_json kept on every row")
+        return {"pruned_rows": 0, "cutoff": None, "keep_days": days, "reason": "no-backup"}
+    if covered_until < cutoff:
+        logger.warning(
+            "retention: newest valid backup is from %s - not clearing raw_json newer than that",
+            covered_until.isoformat(),
+        )
+        cutoff = covered_until
     with session_scope() as session:
         result = session.execute(
             update(TelemetryRaw)

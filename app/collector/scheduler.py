@@ -7,26 +7,50 @@ Guarantees required by the research protocol:
   after a slow cycle collapses to a single run instead of a burst.
 * A cycle that overruns the interval is allowed to finish; the next scheduled
   run that was skipped is recorded as a ``MISSING_INTERVAL`` event.
-* Separate jobs for feature recomputation and the daily backup.
+* Separate jobs for feature recomputation, the daily backup and the hourly
+  speed test.
 """
 
 from __future__ import annotations
 
+import random as _random
 import threading
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from apscheduler.events import EVENT_JOB_ERROR, EVENT_JOB_MISSED
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app.core.config import get_config
+from app.core.config import get_config, get_settings
 from app.core.logging import get_logger
 from app.core.timeutils import utc_now
 from app.services import event_service
 
 logger = get_logger("scheduler")
+
+
+def plan_ramp_times(
+    day_start: datetime,
+    count: int,
+    min_gap_hours: float,
+    rng: _random.Random,
+    horizon_hours: float = 24.0,
+) -> list[datetime]:
+    """Pick ``count`` randomised ramp times within [day_start, +horizon), each at
+    least ``min_gap_hours`` apart. One random time per equal slot, jittered only
+    within the room the min-gap leaves, so spacing is guaranteed (reviewer
+    Bloque 2: events at sorted, wide intervals, not a fixed calendar)."""
+    count = max(1, int(count))
+    slot = horizon_hours / count
+    jitter = max(0.0, slot - float(min_gap_hours))
+    times: list[datetime] = []
+    for i in range(count):
+        offset_h = i * slot + rng.uniform(0.0, jitter)
+        times.append(day_start + timedelta(hours=offset_h))
+    return times
 
 
 class CollectorScheduler:
@@ -117,6 +141,76 @@ class CollectorScheduler:
                 replace_existing=True,
             )
 
+        if self.cfg.get("speedtest.enabled", True):
+            self._scheduler.add_job(
+                self._run_speedtest,
+                trigger=CronTrigger(
+                    minute=int(self.cfg.get("speedtest.minute", 30)), timezone="UTC"
+                ),
+                id="hourly_speedtest",
+                name="Hourly speed test",
+                # A test can take ~40 s on the Pi; a late start is still worth running.
+                misfire_grace_time=300,
+                replace_existing=True,
+            )
+
+        congestion_hours = self.cfg.get("congestion.schedule_hours_utc", []) or []
+        if congestion_hours:
+            self._scheduler.add_job(
+                self._run_congestion_ramp,
+                trigger=CronTrigger(
+                    hour=",".join(str(int(h)) for h in congestion_hours),
+                    minute=int(self.cfg.get("congestion.schedule_minute", 0)),
+                    timezone="UTC",
+                ),
+                id="scheduled_congestion_ramp",
+                name="Scheduled congestion ramp",
+                misfire_grace_time=300,
+                replace_existing=True,
+            )
+
+        if self.cfg.get("wan_control.enabled", False) and self.cfg.get(
+            "wan_control.schedule_enabled", False
+        ):
+            hh, _, mm = str(self.cfg.get("wan_control.schedule_start_local", "00:00")).partition(":")
+            self._scheduler.add_job(
+                self._run_scheduled_outage,
+                trigger=CronTrigger(
+                    hour=int(hh), minute=int(mm or 0),
+                    timezone=get_settings().timezone,
+                ),
+                id="scheduled_wan_outage",
+                name="Scheduled WAN outage",
+                misfire_grace_time=300,
+                replace_existing=True,
+            )
+
+        if self.cfg.get("wan_control.enabled", False) and self.cfg.get(
+            "wan_control.ramp_schedule_enabled", False
+        ):
+            if str(self.cfg.get("wan_control.ramp_schedule_mode", "random")) == "random":
+                # Plan randomised ramp times once a day (and once now) so the
+                # model can never learn the experimenter's calendar (Bloque 2).
+                self._scheduler.add_job(
+                    self._plan_random_ramps,
+                    trigger=CronTrigger(hour=0, minute=5, timezone="UTC"),
+                    id="plan_random_ramps", name="Plan randomised ramps",
+                    misfire_grace_time=600, replace_existing=True,
+                )
+                self._plan_random_ramps()
+            else:
+                ramp_hours = self.cfg.get("wan_control.ramp_schedule_hours_utc", []) or []
+                self._scheduler.add_job(
+                    self._run_scheduled_ramp,
+                    trigger=CronTrigger(
+                        hour=",".join(str(int(h)) for h in ramp_hours) if ramp_hours else None,
+                        minute=int(self.cfg.get("wan_control.ramp_schedule_minute", 0)),
+                        timezone="UTC",
+                    ),
+                    id="scheduled_shaper_ramp", name="Scheduled shaper ramp",
+                    misfire_grace_time=300, replace_existing=True,
+                )
+
         self._scheduler.add_listener(self._on_job_problem, EVENT_JOB_ERROR | EVENT_JOB_MISSED)
         self._scheduler.start()
         self._running = True
@@ -127,6 +221,10 @@ class CollectorScheduler:
     def shutdown(self) -> None:
         if not self._running:
             return
+        from app.services import congestion_service, wan_control_service
+
+        congestion_service.stop()
+        wan_control_service.stop()
         self._scheduler.shutdown(wait=True)
         self._running = False
         logger.info("scheduler stopped")
@@ -222,6 +320,66 @@ class CollectorScheduler:
             run_backup()
         except Exception:
             logger.exception("scheduled backup failed")
+
+    def _run_speedtest(self) -> None:
+        try:
+            from app.services.speedtest_service import run_speedtest
+
+            # Never compete with the daily backup for disk/CPU on the Pi.
+            if utc_now().hour in self.cfg.get("speedtest.skip_hours_utc", [3]):
+                return
+            run_speedtest(trigger="scheduled")
+        except Exception:
+            logger.exception("scheduled speedtest failed")
+
+    def _run_congestion_ramp(self) -> None:
+        try:
+            from app.services import congestion_service
+
+            congestion_service.start(trigger="scheduled")
+        except Exception:
+            logger.exception("scheduled congestion ramp could not start")
+
+    def _run_scheduled_outage(self) -> None:
+        try:
+            from app.services import wan_control_service
+
+            wan_control_service.start_outage(trigger="scheduled")
+        except Exception:
+            logger.exception("scheduled WAN outage could not start")
+
+    def _run_scheduled_ramp(self) -> None:
+        try:
+            from app.services import wan_control_service
+
+            wan_control_service.start_bandwidth_ramp(trigger="scheduled")
+        except Exception:
+            # Expected to no-op when a fault is already active (e.g. nightly outage).
+            logger.info("scheduled shaper ramp skipped: %s", "another WAN fault active or disabled")
+
+    def _plan_random_ramps(self) -> None:
+        """Schedule today's remaining ramps at randomised times (Bloque 2)."""
+        try:
+            now = utc_now()
+            day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            count = int(self.cfg.get("wan_control.ramp_random_count", 6))
+            gap = float(self.cfg.get("wan_control.ramp_random_min_gap_hours", 2))
+            times = plan_ramp_times(day_start, count, gap, _random.Random(now.timetuple().tm_yday))
+            scheduled = 0
+            for t in times:
+                if t <= now + timedelta(seconds=30):
+                    continue  # already past for today
+                self._scheduler.add_job(
+                    self._run_scheduled_ramp,
+                    trigger=DateTrigger(run_date=t),
+                    id=f"ramp_rand_{t:%Y%m%dT%H%M}",
+                    name="Randomised shaper ramp",
+                    misfire_grace_time=600, replace_existing=True,
+                )
+                scheduled += 1
+            logger.info("planned %d randomised ramp(s) for today (%d total times)", scheduled, len(times))
+        except Exception:
+            logger.exception("could not plan randomised ramps")
 
     def _on_job_problem(self, event: Any) -> None:
         logger.warning("APScheduler job problem: %s", event)

@@ -185,10 +185,21 @@ scikit-learn / TensorFlow-Keras.
 
 ## 15. Backups
 
-Daily at 03:00 (configurable) via the SQLite online-backup API →
-`${DATA_DIR}/backups/fortigate_YYYY-MM-DD.db`, keep-N configurable, logged, active
-DB untouched. Manual: `./scripts/backup_database.sh`. Recommended: also `rsync`
-backups to the Mac.
+Daily at 03:00 UTC (configurable) via the SQLite online-backup API, checked with
+`PRAGMA quick_check` and gzipped → `${DATA_DIR}/backups/fortigate_YYYY-MM-DD.db.gz`
+(~15x smaller). Keep-N configurable, logged, active DB untouched. A backup is skipped
+(and logged as an error) when the disk cannot hold its temporary copy; corrupt or
+half-written files are removed and never count towards keep-N. `/api/status` reports
+`checks.backup` (error when the newest valid backup is older than 36 h). raw_json
+retention never clears rows newer than the newest valid backup.
+Manual: `./scripts/backup_database.sh`.
+
+The Pi only keeps the last `keep_days` backups; the long-term archive lives on the
+Mac. `./scripts/sync_backups_to_mac.sh` pulls new backups into
+`~/fortigate_rpi_archive/backups/` and checks each one with `gzip -t`;
+`./scripts/install_mac_backup_sync.sh` installs it as a launchd agent (4 times a day,
+catching up after sleep). Restore / open one with
+`gunzip -k fortigate_YYYY-MM-DD.db.gz`.
 
 ## 16. Logs
 

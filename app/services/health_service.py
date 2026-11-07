@@ -9,7 +9,7 @@ from typing import Any
 
 from sqlalchemy import text
 
-from app.core.config import get_settings
+from app.core.config import get_config, get_settings
 from app.core.logging import get_logger
 from app.core.timeutils import utc_now
 from app.core.version import COLLECTOR_VERSION, SCHEMA_VERSION
@@ -45,6 +45,13 @@ def _host_uptime_seconds() -> float | None:
         return None
 
 
+def _backup_ok(last_backup: Any) -> bool | None:
+    """A backup is expected once a day; older than 36h means the job is failing."""
+    if not get_config().get("backup.enabled", True):
+        return None
+    return last_backup is not None and utc_now() - last_backup < timedelta(hours=36)
+
+
 def platform_health() -> dict[str, Any]:
     """Full health snapshot. Does not hit the FortiGate directly (uses last sample)."""
     from app.collector.scheduler import scheduler
@@ -70,6 +77,9 @@ def platform_health() -> dict[str, Any]:
         last is None or (utc_now() - last.timestamp_utc).total_seconds() < 5 * sched["interval_seconds"]
     )
 
+    from app.services.backup_service import latest_backup_time
+
+    last_backup = latest_backup_time()
     disk = shutil.disk_usage(str(settings.data_dir if settings.data_dir.exists() else "."))
 
     return {
@@ -81,7 +91,9 @@ def platform_health() -> dict[str, Any]:
             "collector": _tri(collector_ok),
             "scheduler": _tri(sched["running"]),
             "database": _tri(_database_ok()),
+            "backup": _tri(_backup_ok(last_backup)),
         },
+        "last_backup": last_backup.isoformat() if last_backup else None,
         "last_successful_collection": last_success.isoformat() if last_success else None,
         "next_scheduled_collection": sched["next_run"],
         "average_api_latency_ms": (

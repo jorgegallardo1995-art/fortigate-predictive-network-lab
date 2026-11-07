@@ -63,3 +63,19 @@ DEFAULT_CONFIG = ModelConfig()
 # must confirm/curate before training, per §3.16.7 ("no debe haber asignación
 # automática... hasta disponer de evidencia").
 FAILURE_EVENT_TYPES = ("WAN_DOWN", "SLA_FAILED", "INTERFACE_DOWN")
+
+# --- induced (self-inflicted) load, see ml/induced.py -------------------------
+# Experiments the collector injects on purpose are marked so the predictive
+# pipeline can treat them correctly instead of mixing them with organic traffic.
+CONGESTION_EXPERIMENT_PREFIX = "EXP-CONG-"       # bandwidth ramps (precursor-bearing)
+INDUCED_OUTAGE_EXPERIMENT_PREFIX = "EXP-WANDOWN-"  # scheduled abrupt outages
+INDUCED_OUTAGE_NOTE = "induced=WAN_DOWN"          # notes marker for the same
+# Fallback duration for an induced outage whose experiment row has no end yet.
+INDUCED_OUTAGE_MAX_HOURS = 3
+# A speed test's window is padded by this on each side so the 1-min sample that
+# overlaps its ~18 s burst is reliably excluded from the "normal" baseline.
+SPEEDTEST_PAD_SECONDS = 60
+# Minutes after an induced fault's restoration to also exclude from BOTH classes
+# (one prediction horizon): the link's recovery transient is neither a clean
+# "normal" baseline nor a precursor (reviewer Bloque 2).
+RECOVERY_EXCLUSION_MINUTES = 15

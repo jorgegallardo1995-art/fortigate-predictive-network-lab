@@ -54,3 +54,39 @@ def random_forest_baseline(train: SequenceSet, test: SequenceSet, seed: int = 42
     clf.fit(_flatten(train.X), train.y)
     proba = clf.predict_proba(_flatten(test.X))[:, 1]
     return clf, proba
+
+
+def minutes_since_last_failure(
+    end_timestamps: np.ndarray, failure_timestamps: list
+) -> np.ndarray:
+    """For each window end, minutes elapsed since the most recent failure instant
+    strictly before it (a large constant when none precedes it)."""
+    import pandas as pd
+
+    fts = np.sort(np.array([pd.Timestamp(f).value for f in failure_timestamps]))
+    ends = np.array([pd.Timestamp(t).value for t in end_timestamps])
+    out = np.full(len(ends), np.nan)
+    for i, e in enumerate(ends):
+        prev = fts[fts < e]
+        out[i] = (e - prev[-1]) / 1e9 / 60.0 if len(prev) else 1e6
+    return out
+
+
+def time_since_failure_baseline(
+    train: SequenceSet, test: SequenceSet, failure_timestamps: list, seed: int = 42
+):
+    """NAIVE calendar baseline (Bloque 2): predicts failure from ONE feature -
+    the time since the last failure - with no telemetry at all. If the LSTM does
+    not clearly beat this, it is learning the experimenter's schedule rather than
+    precursors. Returns (clf, test_proba)."""
+    from sklearn.linear_model import LogisticRegression
+
+    x_tr = minutes_since_last_failure(train.end_timestamps, failure_timestamps).reshape(-1, 1)
+    x_te = minutes_since_last_failure(test.end_timestamps, failure_timestamps).reshape(-1, 1)
+    if len(set(train.y.tolist())) < 2:
+        # Degenerate train: fall back to the base rate, so the comparison still runs.
+        base = float(train.y.mean()) if len(train.y) else 0.0
+        return None, np.full(len(test.y), base)
+    clf = LogisticRegression(class_weight="balanced", max_iter=1000, random_state=seed)
+    clf.fit(x_tr, train.y)
+    return clf, clf.predict_proba(x_te)[:, 1]

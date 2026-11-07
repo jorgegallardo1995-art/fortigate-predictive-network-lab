@@ -304,6 +304,69 @@ class ProbeResult(Base):
     raw: Mapped[TelemetryRaw] = relationship(back_populates="probe_results")
 
 
+class SpeedTest(Base):
+    """Active throughput test (Ookla Speedtest CLI) run from the collector host.
+
+    Saturates the WAN on purpose for ~30 s, so ``[started_at, finished_at]`` is
+    a self-inflicted load window: telemetry inside it is not organic traffic
+    and analyses must account for it. Independent of ``telemetry_raw``.
+    """
+
+    __tablename__ = "speed_tests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    data_source: Mapped[str] = mapped_column(String(8), index=True)
+    trigger: Mapped[str] = mapped_column(String(16))  # scheduled | manual
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    ping_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    jitter_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    download_mbps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    upload_mbps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Latency measured while the link is saturated (IQM) - bufferbloat indicator.
+    download_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    upload_latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    packet_loss_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    download_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    upload_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
+    server_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    server_name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    server_location: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    isp: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    result_url: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    raw_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class LoadStep(Base):
+    """One step of a congestion ramp (app/services/congestion_service.py).
+
+    The ramp is registered as a CONGESTION experiment; each step offers a fixed
+    share of the link capacity with iperf3 for a fixed time. ``target_*`` is
+    what was offered, ``achieved_mbps`` what iperf3 actually moved.
+    """
+
+    __tablename__ = "load_steps"
+    __table_args__ = (Index("ix_load_steps_exp_step", "experiment_id", "step_index"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    experiment_id: Mapped[str] = mapped_column(String(64), index=True)
+    data_source: Mapped[str] = mapped_column(String(8), index=True)
+    step_index: Mapped[int] = mapped_column(Integer)
+    direction: Mapped[str] = mapped_column(String(16))  # download | upload
+    target_pct: Mapped[float] = mapped_column(Float)
+    target_mbps: Mapped[float] = mapped_column(Float)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    achieved_mbps: Mapped[float | None] = mapped_column(Float, nullable=True)
+    retransmits: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 # =============================================================================
 # DERIVED FEATURES
 # =============================================================================

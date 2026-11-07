@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block heading %}Speed tests{% endblock %}
+
+{% block content %}
+<section class="chart-controls">
+  <label>Ventana:
+    <select id="st-hours">
+      <option value="24">24 h</option><option value="168" selected>7 días</option>
+      <option value="720">30 días</option><option value="8760">1 año</option>
+    </select>
+  </label>
+  <button class="btn" id="st-run">Ejecutar ahora</button>
+  <span class="muted" id="st-note"></span>
+</section>
+
+<section class="kpi-row">
+  <div class="kpi" id="st-k-down"><span class="kpi-label">Último download</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="st-k-up"><span class="kpi-label">Último upload</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="st-k-ping"><span class="kpi-label">Último ping</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="st-k-ok"><span class="kpi-label">Tests exitosos</span><span class="kpi-value">—</span></div>
+</section>
+
+<section class="stat-grid">
+  <div class="stat"><span class="stat-label">Download prom. / mín / máx</span><span class="stat-value" id="st-s-down">—</span></div>
+  <div class="stat"><span class="stat-label">Upload prom. / mín / máx</span><span class="stat-value" id="st-s-up">—</span></div>
+  <div class="stat"><span class="stat-label">Ping prom.</span><span class="stat-value" id="st-s-ping">—</span></div>
+  <div class="stat"><span class="stat-label">Latencia bajo carga prom.</span><span class="stat-value" id="st-s-loaded">—</span></div>
+  <div class="stat"><span class="stat-label">Programación</span><span class="stat-value" id="st-s-sched">—</span></div>
+  <div class="stat"><span class="stat-label">Servidor</span><span class="stat-value" id="st-s-server">—</span></div>
+</section>
+
+<section class="chart-grid">
+  <figure class="chart-card"><figcaption>Throughput (Mbps)</figcaption><canvas id="st-chart-bw"></canvas></figure>
+  <figure class="chart-card"><figcaption>Latencia (ms): reposo vs. bajo carga</figcaption><canvas id="st-chart-lat"></canvas></figure>
+</section>
+
+<section class="panel">
+  <p class="muted">Cada test satura el enlace ~30 s desde la Raspberry. Esas ventanas quedan registradas
+    (inicio/fin) para distinguirlas del tráfico orgánico en el análisis.</p>
+  <div class="table-wrap">
+    <table id="st-table">
+      <thead><tr><th>Inicio (local)</th><th>Download</th><th>Upload</th><th>Ping</th><th>Jitter</th>
+        <th>Lat. carga ↓/↑</th><th>Pérdida</th><th>Servidor</th><th>Origen</th><th>Estado</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const esc = s => String(s ?? "—").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const num = (v, unit, d = 1) => v === null || v === undefined ? "—" : `${Number(v).toFixed(d)} ${unit}`;
+const trio = (s, unit) => s.avg === null ? "—" : `${s.avg} / ${s.min} / ${s.max} ${unit}`;
+const charts = {};
+
+function lineChart(id, datasets) {
+  if (typeof window.Chart === "undefined" || window.__noChart) return null;
+  if (charts[id]) return charts[id];
+  charts[id] = new window.Chart(document.getElementById(id), {
+    type: "line",
+    data: { labels: [], datasets: datasets.map(([label, color]) => ({
+      label, data: [], borderColor: color, backgroundColor: color,
+      borderWidth: 1.5, pointRadius: 2, tension: 0.2, spanGaps: false,
+    })) },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { ticks: { color: "#8b98a9", maxTicksLimit: 8 }, grid: { color: "#26303f" } },
+        y: { ticks: { color: "#8b98a9" }, grid: { color: "#26303f" }, beginAtZero: true },
+      },
+      plugins: { legend: { labels: { color: "#8b98a9" } } },
+    },
+  });
+  return charts[id];
+}
+
+function setKpi(id, text, ok) {
+  const el = document.getElementById(id);
+  el.querySelector(".kpi-value").textContent = text;
+  el.className = "kpi" + (ok === undefined ? "" : ok ? " kpi-ok" : " kpi-bad");
+}
+
+async function loadSpeedtests() {
+  const hours = document.getElementById("st-hours").value;
+  const [sum, rows] = await Promise.all([
+    PNLApi.get(`/api/speedtests/summary?hours=${hours}`),
+    PNLApi.get(`/api/speedtests?hours=${hours}`),
+  ]);
+
+  const last = sum.last;
+  setKpi("st-k-down", last && last.success ? num(last.download_mbps, "Mbps") : "—");
+  setKpi("st-k-up", last && last.success ? num(last.upload_mbps, "Mbps") : "—");
+  setKpi("st-k-ping", last && last.success ? num(last.ping_ms, "ms") : "—");
+  setKpi("st-k-ok", sum.total ? `${sum.successful} / ${sum.total}` : "—",
+         sum.total ? sum.failed === 0 : undefined);
+
+  const set = (id, v) => document.getElementById(id).textContent = v;
+  set("st-s-down", trio(sum.download_mbps, "Mbps"));
+  set("st-s-up", trio(sum.upload_mbps, "Mbps"));
+  set("st-s-ping", sum.ping_ms.avg === null ? "—" : `${sum.ping_ms.avg} ms`);
+  set("st-s-loaded", sum.download_latency_ms.avg === null ? "—" : `${sum.download_latency_ms.avg} ms`);
+  const sch = sum.schedule;
+  set("st-s-sched", sch.enabled ? `cada hora, min :${String(sch.minute_utc).padStart(2, "0")} UTC` : "desactivado");
+  set("st-s-server", last && last.server_name ? `${last.server_name} (${last.server_location ?? "—"})` : "—");
+  document.getElementById("st-note").textContent = sum.running ? "test en curso…" : "";
+
+  const asc = rows.slice().reverse();
+  const tz = (window.PNL && window.PNL.timezone) || undefined;
+  const labels = asc.map(t => new Date(t.started_at).toLocaleString("es-CL",
+    { timeZone: tz, day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }));
+  const bw = lineChart("st-chart-bw", [["Download", "#3fb950"], ["Upload", "#d29922"]]);
+  if (bw) {
+    bw.data.labels = labels;
+    bw.data.datasets[0].data = asc.map(t => t.download_mbps);
+    bw.data.datasets[1].data = asc.map(t => t.upload_mbps);
+    bw.update();
+  }
+  const lat = lineChart("st-chart-lat", [["Ping (reposo)", "#3ea6ff"], ["Bajo carga ↓", "#7c5cff"], ["Bajo carga ↑", "#f85149"]]);
+  if (lat) {
+    lat.data.labels = labels;
+    lat.data.datasets[0].data = asc.map(t => t.ping_ms);
+    lat.data.datasets[1].data = asc.map(t => t.download_latency_ms);
+    lat.data.datasets[2].data = asc.map(t => t.upload_latency_ms);
+    lat.update();
+  }
+
+  document.querySelector("#st-table tbody").innerHTML = rows.map(t => `<tr class="${t.success ? "" : "sev-warning"}">
+    <td>${PNLApi.fmtTime(t.started_at)}</td>
+    <td>${num(t.download_mbps, "Mbps")}</td><td>${num(t.upload_mbps, "Mbps")}</td>
+    <td>${num(t.ping_ms, "ms")}</td><td>${num(t.jitter_ms, "ms", 2)}</td>
+    <td>${num(t.download_latency_ms, "", 0)} / ${num(t.upload_latency_ms, "ms", 0)}</td>
+    <td>${num(t.packet_loss_pct, "%", 2)}</td>
+    <td>${esc(t.server_name)}</td><td>${esc(t.trigger)}</td>
+    <td>${t.success ? (t.result_url ? `<a href="${esc(t.result_url)}" target="_blank" rel="noopener">OK ↗</a>` : "OK")
+                    : `<span title="${esc(t.error)}">ERROR</span>`}</td></tr>`).join("")
+    || `<tr><td colspan="10" class="muted">Sin speed tests en la ventana seleccionada.</td></tr>`;
+}
+
+document.getElementById("st-run").addEventListener("click", async () => {
+  const btn = document.getElementById("st-run");
+  btn.disabled = true;
+  document.getElementById("st-note").textContent = "ejecutando test (~30-60 s)…";
+  try {
+    await PNLApi.post("/api/speedtests/run");
+  } catch (e) {
+    document.getElementById("st-note").textContent = String(e).includes("409")
+      ? "ya hay un test en curso" : "error: " + e;
+  }
+  btn.disabled = false;
+  loadSpeedtests();
+});
+document.getElementById("st-hours").addEventListener("change", loadSpeedtests);
+document.addEventListener("DOMContentLoaded", () => {
+  loadSpeedtests();
+  setInterval(loadSpeedtests, (window.PNL.refreshSeconds || 30) * 1000);
+});
+</script>
+{% endblock %}

@@ -22,18 +22,21 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from ml.baselines import random_forest_baseline, threshold_baseline
-from ml.config import DEFAULT_CONFIG, FAILURE_EVENT_TYPES
-from ml.data_loading import load_dataset, load_experiments, load_network_events
-from ml.evaluate import evaluate_predictions, lead_times, select_threshold, summarise_lead_times
-from ml.labeling import (
-    apply_labels,
-    dedupe_failures,
-    failures_from_events,
-    failures_from_experiments,
-    failures_from_manual,
-    labeling_summary,
+from ml.baselines import (
+    random_forest_baseline,
+    threshold_baseline,
+    time_since_failure_baseline,
 )
+from ml.config import DEFAULT_CONFIG, FAILURE_EVENT_TYPES
+from ml.data_loading import (
+    load_dataset,
+    load_experiments,
+    load_network_events,
+    load_speed_tests,
+)
+from ml.evaluate import evaluate_predictions, lead_times, select_threshold, summarise_lead_times
+from ml.induced import build_induced_plan, drop_excluded_rows, predictive_failures
+from ml.labeling import apply_labels, failures_from_manual, labeling_summary
 from ml.preprocessing import SequenceScaler, temporal_split
 from ml.segments import continuous_segments, segment_stats
 from ml.sequences import build_sequences
@@ -97,6 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     synthetic = bool(args.synthetic_demo)
+    induced_plan = None
     if synthetic:
         print("=" * 78)
         print("SYNTHETIC DEMO MODE - injected fake failures. This validates the")
@@ -110,10 +114,21 @@ def main(argv: list[str] | None = None) -> int:
         df = load_dataset(args.db, args.data_source, since=args.since)
         experiments_df = load_experiments(args.db)
         events_df = load_network_events(args.db, FAILURE_EVENT_TYPES)
-        failures = dedupe_failures(
-            failures_from_experiments(experiments_df)
-            + failures_from_events(events_df)
-            + _load_manual_failures(args.failures_json)
+        speed_tests_df = load_speed_tests(args.db, args.data_source)
+
+        # Keep self-inflicted load (speed tests, induced outages, ramp tails) out
+        # of the organic baseline, and only label precursor-bearing failures.
+        induced_plan = build_induced_plan(experiments_df, speed_tests_df)
+        rows_before = len(df)
+        df = drop_excluded_rows(df, induced_plan.exclude_windows)
+        rows_dropped_induced = rows_before - len(df)
+        failures = predictive_failures(
+            experiments_df, events_df, _load_manual_failures(args.failures_json), induced_plan
+        )
+        print(
+            f"induced-load exclusion: dropped {rows_before - len(df):,} rows "
+            f"({induced_plan.summary()}); "
+            f"{len(induced_plan.induced_outage_ids)} induced outage(s) not used as labels"
         )
         data_source = args.data_source
 
@@ -226,6 +241,15 @@ def main(argv: list[str] | None = None) -> int:
             baseline_results["random_forest"] = evaluate_predictions(
                 split.test.y, rf_proba, threshold, span_days
             ).to_dict()
+        # NAIVE calendar baseline: if the LSTM does not beat "time since last
+        # failure", it is learning the schedule, not precursors (reviewer Bloque 2).
+        failure_instants = [f.failure_timestamp for f in failures]
+        _, naive_proba = time_since_failure_baseline(
+            split.train, split.test, failure_instants, seed=cfg.seed
+        )
+        baseline_results["naive_time_since_failure"] = evaluate_predictions(
+            split.test.y, naive_proba, threshold, span_days
+        ).to_dict()
 
     run_id = ("demo_" if synthetic else "run_") + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     out_dir = Path(args.output_dir) / run_id
@@ -254,6 +278,28 @@ def main(argv: list[str] | None = None) -> int:
             "total_rows": len(df),
         },
         "labeling": lsum,
+        "induced_exclusion": (
+            {**induced_plan.summary(),
+             "induced_outages_excluded": len(induced_plan.induced_outage_ids)}
+            if induced_plan else None
+        ),
+        # Consolidated dataset-flow table (reviewer Bloque 4): from raw rows to
+        # labelled sequences per partition, with what was dropped and why.
+        "dataset_flow": None if synthetic else {
+            "observations_loaded": rows_before,
+            "rows_dropped_induced_load": rows_dropped_induced,
+            "rows_used": len(df),
+            "positive_rows": lsum["positive_rows"],
+            "distinct_failures": lsum["distinct_failures"],
+            "segments": segment_stats(segments),
+            "sequences_total": len(seqset),
+            "sequences_by_partition": {
+                "train": {"n": len(split.train), "positives": int(split.train.y.sum())},
+                "val": {"n": len(split.val), "positives": int(split.val.y.sum()) if len(split.val) else 0},
+                "test": {"n": len(split.test),
+                         "positives": int(split.test.y.sum()) if len(split.test) else 0},
+            },
+        },
         "failure_instants": [f.failure_timestamp.isoformat() for f in failures],
         "segments": segment_stats(segments),
         "sequences": {

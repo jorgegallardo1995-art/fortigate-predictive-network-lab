@@ -7,6 +7,7 @@
   <div class="kpi" id="h-collector"><span class="kpi-label">Collector</span><span class="kpi-value">—</span></div>
   <div class="kpi" id="h-scheduler"><span class="kpi-label">Scheduler</span><span class="kpi-value">—</span></div>
   <div class="kpi" id="h-database"><span class="kpi-label">Database</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="h-backup"><span class="kpi-label">Backup</span><span class="kpi-value">—</span></div>
 </section>
 
 <section class="stat-grid">
@@ -17,6 +18,7 @@
   <div class="stat"><span class="stat-label">Uptime collector</span><span class="stat-value" id="h-cup">—</span></div>
   <div class="stat"><span class="stat-label">Uptime host</span><span class="stat-value" id="h-hup">—</span></div>
   <div class="stat"><span class="stat-label">Tamaño BD</span><span class="stat-value" id="h-db">—</span></div>
+  <div class="stat"><span class="stat-label">Último backup</span><span class="stat-value" id="h-lastbackup">—</span></div>
   <div class="stat"><span class="stat-label">Disco disponible</span><span class="stat-value" id="h-disk">—</span></div>
 </section>
 
@@ -39,6 +41,7 @@ async function loadHealth() {
   chip("h-collector", h.checks.collector);
   chip("h-scheduler", h.checks.scheduler);
   chip("h-database", h.checks.database);
+  chip("h-backup", h.checks.backup);
   const set = (id, v) => document.getElementById(id).textContent = v ?? "—";
   set("h-last", PNLApi.fmtTime(h.last_successful_collection));
   set("h-next", PNLApi.fmtTime(h.next_scheduled_collection));
@@ -47,6 +50,7 @@ async function loadHealth() {
   set("h-cup", PNLApi.fmtDuration(h.collector_uptime_seconds));
   set("h-hup", PNLApi.fmtDuration(h.host_uptime_seconds));
   set("h-db", PNLApi.fmtBytes(h.database_size_bytes));
+  set("h-lastbackup", PNLApi.fmtTime(h.last_backup));
   set("h-disk", PNLApi.fmtBytes(h.disk_available_bytes));
   set("h-platform", h.platform);
 }

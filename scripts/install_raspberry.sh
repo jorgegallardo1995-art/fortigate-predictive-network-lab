@@ -37,7 +37,10 @@ echo "==> [2/12] Checking Python"
 # 3. system deps -------------------------------------------------------
 echo "==> [3/12] Installing system packages"
 apt-get update -qq
-apt-get install -y -qq python3-venv python3-dev build-essential sqlite3 iputils-ping curl
+# iperf3 is only a client for congestion ramps - never start its server daemon.
+echo "iperf3 iperf3/start_daemon boolean false" | debconf-set-selections
+DEBIAN_FRONTEND=noninteractive \
+  apt-get install -y -qq python3-venv python3-dev build-essential sqlite3 iputils-ping curl iperf3
 # Timestamp integrity: keep the clock and make the collector wait for NTP on boot.
 systemctl enable --now systemd-timesyncd 2>/dev/null || true
 systemctl enable systemd-time-wait-sync 2>/dev/null || true
@@ -74,6 +77,8 @@ DASHBOARD_PORT="${DASHBOARD_PORT:-8000}"
 mkdir -p "$DATA_DIR/exports" "$DATA_DIR/backups" "$APP_DIR/logs"
 sudo -u "$RUN_USER" curl -fsSL -o "$APP_DIR/app/static/vendor/chart.umd.min.js" "$CHART_URL" \
   || echo "   (could not fetch Chart.js - dashboard works without it)"
+bash "$APP_DIR/scripts/install_speedtest.sh" \
+  || echo "   (could not install the Ookla Speedtest CLI - hourly speed tests will log errors)"
 
 # 7. permissions -------------------------------------------------
 echo "==> [7/12] Setting permissions"

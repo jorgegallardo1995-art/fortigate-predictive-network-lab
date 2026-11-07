@@ -63,6 +63,21 @@ def events(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "events.html", _base_context("events"))
 
 
+@router.get("/speedtests", response_class=HTMLResponse)
+def speedtests(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "speedtests.html", _base_context("speedtests"))
+
+
+@router.get("/congestion", response_class=HTMLResponse)
+def congestion(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "congestion.html", _base_context("congestion"))
+
+
+@router.get("/wan-faults", response_class=HTMLResponse)
+def wan_faults(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request, "wanfaults.html", _base_context("wanfaults"))
+
+
 @router.get("/research", response_class=HTMLResponse)
 def research(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request, "research.html", _base_context("research"))

@@ -58,6 +58,8 @@ def test_aborts_cleanly_with_zero_real_failures(tmp_path, monkeypatch) -> None:
         experiment_id=[], scenario=[], start_timestamp=[], end_timestamp=[], failure_timestamp=[]))
     monkeypatch.setattr(train_module, "load_network_events", lambda *a, **k: empty_df.assign(
         event_type=[], severity=[], description=[], experiment_id=[]))
+    monkeypatch.setattr(train_module, "load_speed_tests", lambda *a, **k: empty_df.assign(
+        started_at=[], finished_at=[]))
 
     rc = main(["--db", "unused.db", "--data-source", "REAL", "--output-dir", str(tmp_path)])
     assert rc == 1

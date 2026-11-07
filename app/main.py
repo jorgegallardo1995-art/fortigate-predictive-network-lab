@@ -36,6 +36,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     )
     settings.ensure_directories()
     init_db()
+    from app.services.congestion_service import close_orphans
+    from app.services.wan_control_service import restore_on_startup
+
+    close_orphans()
+    restore_on_startup()  # a crash mid-outage must never leave the WAN down
 
     scheduler = None
     if settings.run_scheduler:

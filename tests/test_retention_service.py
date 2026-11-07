@@ -5,9 +5,18 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
 from app.core.timeutils import utc_now
 from app.database.models import DATA_SOURCE_REAL, TelemetryRaw
 from app.services.retention_service import prune_raw_json
+
+
+@pytest.fixture(autouse=True)
+def _fresh_backup(monkeypatch):
+    """Pretend a valid backup was just taken, so only the age cutoff applies."""
+    from app.services import backup_service
+
+    monkeypatch.setattr(backup_service, "latest_backup_time", utc_now)
 
 
 def _raw(ts, **kw) -> TelemetryRaw:
@@ -60,3 +69,37 @@ def test_idempotent_second_run_prunes_nothing(session) -> None:
 
     assert first["pruned_rows"] == 1
     assert second["pruned_rows"] == 0
+
+
+def test_never_prunes_rows_newer_than_the_latest_backup(session, monkeypatch) -> None:
+    from app.services import backup_service
+
+    now = utc_now()
+    backed_up = _raw(now - timedelta(days=10))
+    not_backed_up = _raw(now - timedelta(days=6))  # old enough, but no backup holds it
+    session.add_all([backed_up, not_backed_up])
+    session.commit()
+    monkeypatch.setattr(backup_service, "latest_backup_time", lambda: now - timedelta(days=8))
+
+    result = prune_raw_json(keep_days=3)
+
+    session.refresh(backed_up)
+    session.refresh(not_backed_up)
+    assert result["pruned_rows"] == 1
+    assert backed_up.raw_json is None
+    assert not_backed_up.raw_json == {"some": "payload"}
+
+
+def test_prunes_nothing_without_any_backup(session, monkeypatch) -> None:
+    from app.services import backup_service
+
+    row = _raw(utc_now() - timedelta(days=10))
+    session.add(row)
+    session.commit()
+    monkeypatch.setattr(backup_service, "latest_backup_time", lambda: None)
+
+    result = prune_raw_json(keep_days=3)
+
+    session.refresh(row)
+    assert result["pruned_rows"] == 0
+    assert row.raw_json == {"some": "payload"}

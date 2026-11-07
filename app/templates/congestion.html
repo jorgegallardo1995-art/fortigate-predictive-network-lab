@@ -1,0 +1,218 @@
+{% extends "base.html" %}
+{% block heading %}Congestión controlada{% endblock %}
+
+{% block content %}
+<section class="panel" id="cg-warning" hidden>
+  <p style="color: var(--warn); margin: 0"></p>
+</section>
+
+<section class="chart-controls">
+  <label>Dirección:
+    <select id="cg-direction">
+      <option value="download">download (servidor → Pi)</option>
+      <option value="upload">upload (Pi → servidor)</option>
+    </select>
+  </label>
+  <label>Duración por escalón:
+    <select id="cg-step">
+      <option value="60">1 min</option><option value="120">2 min</option>
+      <option value="180" selected>3 min</option><option value="300">5 min</option>
+    </select>
+  </label>
+  <button class="btn" id="cg-start">Iniciar rampa (tráfico iperf3)</button>
+  <button class="btn" id="cg-shaper">Rampa de shaper (FortiGate)</button>
+  <button class="btn" id="cg-stop" disabled>Detener</button>
+  <span class="muted" id="cg-note"></span>
+</section>
+
+<section class="kpi-row">
+  <div class="kpi" id="cg-k-state"><span class="kpi-label">Estado</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="cg-k-step"><span class="kpi-label">Escalón</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="cg-k-load"><span class="kpi-label">Carga ofrecida</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="cg-k-left"><span class="kpi-label">Tiempo restante</span><span class="kpi-value">—</span></div>
+</section>
+
+<section class="stat-grid">
+  <div class="stat"><span class="stat-label">Experimento</span><span class="stat-value" id="cg-s-exp">—</span></div>
+  <div class="stat"><span class="stat-label">Perfil (% del enlace)</span><span class="stat-value" id="cg-s-profile">—</span></div>
+  <div class="stat"><span class="stat-label">T_f (falla) en</span><span class="stat-value" id="cg-s-tf">—</span></div>
+  <div class="stat"><span class="stat-label">Servidor iperf3</span><span class="stat-value" id="cg-s-server">—</span></div>
+  <div class="stat"><span class="stat-label">Rampas automáticas (UTC)</span><span class="stat-value" id="cg-s-sched">—</span></div>
+</section>
+
+<section class="chart-grid">
+  <figure class="chart-card"><figcaption>Última rampa: carga ofrecida vs. lograda (Mbps)</figcaption><canvas id="cg-chart"></canvas></figure>
+  <figure class="chart-card"><figcaption>Última rampa: retransmisiones TCP por escalón</figcaption><canvas id="cg-chart-rtx"></canvas></figure>
+</section>
+
+<section class="panel">
+  <p class="muted">Cada rampa queda registrada como experimento <code>CONGESTION</code> (ver Eventos y /api/experiments),
+    con un registro por escalón. T_f se fija por protocolo al inicio del primer escalón que satura el enlace.</p>
+  <div class="table-wrap">
+    <table id="cg-table">
+      <thead><tr><th>Inicio (local)</th><th>Experimento</th><th>Dirección</th><th>Escalones</th>
+        <th>Máx. lograda</th><th>T_f</th><th>Resultado</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const esc = s => String(s ?? "—").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const charts = {};
+let lastStatus = null;
+
+function chart(id, type, datasets) {
+  if (typeof window.Chart === "undefined" || window.__noChart) return null;
+  if (charts[id]) return charts[id];
+  charts[id] = new window.Chart(document.getElementById(id), {
+    type,
+    data: { labels: [], datasets: datasets.map(([label, color, kind]) => ({
+      label, data: [], type: kind || type, borderColor: color, backgroundColor: color,
+      borderWidth: 1.5, pointRadius: 3, stepped: kind === "line" ? "before" : false,
+    })) },
+    options: {
+      responsive: true, maintainAspectRatio: false, animation: false,
+      scales: {
+        x: { ticks: { color: "#8b98a9" }, grid: { color: "#26303f" } },
+        y: { ticks: { color: "#8b98a9" }, grid: { color: "#26303f" }, beginAtZero: true },
+      },
+      plugins: { legend: { labels: { color: "#8b98a9" } } },
+    },
+  });
+  return charts[id];
+}
+
+function setKpi(id, text, cls) {
+  const el = document.getElementById(id);
+  el.querySelector(".kpi-value").textContent = text;
+  el.className = "kpi" + (cls ? " " + cls : "");
+}
+
+function fmtLeft(s) {
+  if (s === null || s < 0) return "—";
+  const m = Math.floor(s / 60), r = Math.floor(s % 60);
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+function renderStatus(st) {
+  lastStatus = st;
+  const d = st.defaults;
+  const warn = document.getElementById("cg-warning");
+  if (!st.server && !st.mock_mode) {
+    warn.hidden = false;
+    warn.querySelector("p").textContent =
+      "Falta configurar congestion.server_host (servidor iperf3 en Internet) en config/config.yaml: las rampas no pueden iniciarse.";
+  } else warn.hidden = true;
+
+  document.getElementById("cg-start").disabled = st.running;
+  document.getElementById("cg-stop").disabled = !st.running;
+  document.getElementById("cg-s-server").textContent = st.server || (st.mock_mode ? "MOCK" : "sin configurar");
+  document.getElementById("cg-s-sched").textContent =
+    d.schedule_hours_utc.length ? d.schedule_hours_utc.map(h => `${h}:00`).join(", ") : "solo manual";
+
+  if (!st.running) {
+    setKpi("cg-k-state", "INACTIVO", "kpi-muted");
+    ["cg-k-step", "cg-k-load", "cg-k-left"].forEach(id => setKpi(id, "—"));
+    document.getElementById("cg-s-exp").textContent = "—";
+    document.getElementById("cg-s-profile").textContent = d.profile_pct.map(p => p + "%").join(" → ") + " → 0%";
+    document.getElementById("cg-s-tf").textContent = `primer escalón ≥ ${d.failure_at_pct}%`;
+    return;
+  }
+  const step = st.step_index ?? 0;
+  const cur = st.plan[step] || {};
+  const elapsed = st.step_started_at ? (Date.now() - new Date(st.step_started_at)) / 1000 : 0;
+  const left = st.plan.slice(step).reduce((a, p) => a + p.seconds, 0) - elapsed;
+  setKpi("cg-k-state", "EN CURSO", cur.target_pct >= d.failure_at_pct ? "kpi-bad" : "kpi-ok");
+  setKpi("cg-k-step", `${step + 1} / ${st.steps_total}`);
+  setKpi("cg-k-load", `${cur.target_pct}% · ${(st.capacity_mbps * cur.target_pct / 100).toFixed(0)} Mbps`);
+  setKpi("cg-k-left", fmtLeft(left));
+  document.getElementById("cg-s-exp").textContent = st.experiment_id;
+  document.getElementById("cg-s-profile").textContent = st.plan.map(p => p.target_pct + "%").join(" → ");
+  document.getElementById("cg-s-tf").textContent = `primer escalón ≥ ${d.failure_at_pct}%`;
+}
+
+function renderRuns(runs) {
+  const last = runs[0];
+  if (last) {
+    const labels = last.steps.map(s => `${s.target_pct}%`);
+    const c = chart("cg-chart", "bar", [["Ofrecida", "#3ea6ff", "line"], ["Lograda", "#3fb950", "bar"]]);
+    if (c) {
+      c.data.labels = labels;
+      c.data.datasets[0].data = last.steps.map(s => s.target_mbps);
+      c.data.datasets[1].data = last.steps.map(s => s.achieved_mbps);
+      c.update();
+    }
+    const r = chart("cg-chart-rtx", "bar", [["Retransmisiones", "#f85149", "bar"]]);
+    if (r) {
+      r.data.labels = labels;
+      r.data.datasets[0].data = last.steps.map(s => s.retransmits);
+      r.update();
+    }
+  }
+  document.querySelector("#cg-table tbody").innerHTML = runs.map(run => {
+    const ach = run.steps.map(s => s.achieved_mbps).filter(v => v !== null);
+    const outcome = run.end_timestamp ? (run.notes || "").split("|").slice(1).join("|").trim() || "—" : "en curso";
+    const failed = run.steps.filter(s => !s.success).length;
+    return `<tr class="${failed ? "sev-warning" : ""}">
+      <td>${PNLApi.fmtTime(run.start_timestamp)}</td><td>${esc(run.experiment_id)}</td>
+      <td>${esc(run.steps[0]?.direction)}</td>
+      <td title="${esc(run.steps.map(s => `${s.target_pct}%: ${s.achieved_mbps ?? (s.error || "—")}`).join(" · "))}">
+        ${run.steps.length}${failed ? ` (${failed} con error)` : ""}</td>
+      <td>${ach.length ? Math.max(...ach).toFixed(1) + " Mbps" : "—"}</td>
+      <td>${PNLApi.fmtTime(run.failure_timestamp)}</td><td>${esc(outcome)}</td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="muted">Aún no hay rampas de congestión.</td></tr>`;
+}
+
+async function refresh() {
+  const [st, runs, wan] = await Promise.all([
+    PNLApi.get("/api/congestion/status"), PNLApi.get("/api/congestion/runs?hours=8760"),
+    PNLApi.get("/api/wan-control/status").catch(() => ({ running: false })),
+  ]);
+  renderStatus(st);
+  renderRuns(runs);
+  // A shaper ramp is a wan_control fault, not congestion_service: keep Detener usable for it.
+  const shaperRamp = wan.running && wan.mode === "ramp";
+  if (shaperRamp) document.getElementById("cg-stop").disabled = false;
+  document.getElementById("cg-shaper").disabled = st.running || wan.running;
+}
+
+document.getElementById("cg-start").addEventListener("click", async () => {
+  const note = document.getElementById("cg-note");
+  note.textContent = "";
+  const r = await fetch("/api/congestion/start", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      direction: document.getElementById("cg-direction").value,
+      step_seconds: Number(document.getElementById("cg-step").value),
+    }),
+  });
+  if (!r.ok) note.textContent = "No se pudo iniciar: " + ((await r.json()).detail || r.status);
+  refresh();
+});
+document.getElementById("cg-shaper").addEventListener("click", async () => {
+  const note = document.getElementById("cg-note");
+  note.textContent = "";
+  if (!confirm("Rampa de shaper: reduce el ancho de banda de wan1 en el FortiGate por escalones "
+    + "y lo restaura. Afecta a toda la red durante la prueba. ¿Continuar?")) return;
+  const r = await fetch("/api/wan-control/ramp/start", {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: "{}",
+  });
+  note.textContent = r.ok ? "rampa de shaper iniciada (ver estado abajo)"
+    : "No se pudo iniciar: " + ((await r.json()).detail || r.status);
+  refresh();
+});
+document.getElementById("cg-stop").addEventListener("click", async () => {
+  await PNLApi.post("/api/congestion/stop");
+  await PNLApi.post("/api/wan-control/restore");  // also aborts a shaper ramp
+  refresh();
+});
+document.addEventListener("DOMContentLoaded", () => {
+  refresh();
+  setInterval(refresh, 5000);
+  setInterval(() => lastStatus && lastStatus.running && renderStatus(lastStatus), 1000);
+});
+</script>
+{% endblock %}

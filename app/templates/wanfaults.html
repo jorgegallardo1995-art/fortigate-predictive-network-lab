@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block heading %}Fallas de WAN (inducidas){% endblock %}
+
+{% block content %}
+<section class="panel" id="wf-banner" hidden>
+  <p style="margin: 0; font-weight: 600"></p>
+</section>
+
+<section class="kpi-row">
+  <div class="kpi" id="wf-k-state"><span class="kpi-label">Estado del enlace</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="wf-k-exp"><span class="kpi-label">Experimento activo</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="wf-k-left"><span class="kpi-label">Restaura en</span><span class="kpi-value">—</span></div>
+  <div class="kpi" id="wf-k-sched"><span class="kpi-label">Corte programado</span><span class="kpi-value">—</span></div>
+</section>
+
+<section class="chart-controls">
+  <label>Duración del corte:
+    <select id="wf-dur">
+      <option value="120">2 min (prueba)</option>
+      <option value="300">5 min</option>
+      <option value="1800">30 min</option>
+      <option value="10800" selected>3 h (00:00–03:00)</option>
+    </select>
+  </label>
+  <button class="btn" id="wf-start">Iniciar corte ahora</button>
+  <button class="btn" id="wf-restore">Restaurar enlace</button>
+  <span class="muted" id="wf-note"></span>
+</section>
+
+<section class="panel">
+  <p class="muted">Cada corte baja administrativamente <code id="wf-iface">wan1</code> en el FortiGate por API y lo
+    restaura solo (status up + ancho de banda base). Queda registrado como experimento <b>INDUCIDO</b>
+    (scenario WAN_FAILURE, T_f = inicio del corte) para el conjunto de fallas confirmadas; el pipeline de
+    ML debe excluir estas ventanas del entrenamiento de predicción.</p>
+  <div class="table-wrap">
+    <table id="wf-table">
+      <thead><tr><th>Inicio (local)</th><th>Experimento</th><th>Interfaz</th><th>Duración</th>
+        <th>T_f</th><th>Fin</th><th>Resultado</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const esc = s => String(s ?? "—").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+let last = null;
+
+function setKpi(id, text, cls) {
+  const el = document.getElementById(id);
+  el.querySelector(".kpi-value").textContent = text;
+  el.className = "kpi" + (cls ? " " + cls : "");
+}
+
+function banner(msg, kind) {
+  const b = document.getElementById("wf-banner");
+  if (!msg) { b.hidden = true; return; }
+  b.hidden = false;
+  b.querySelector("p").textContent = msg;
+  b.querySelector("p").style.color = kind === "bad" ? "var(--bad)" : "var(--warn)";
+}
+
+function render(st) {
+  last = st;
+  document.getElementById("wf-iface").textContent = st.interface;
+  const canRun = st.enabled && st.configured;
+  document.getElementById("wf-start").disabled = !canRun || st.running;
+  document.getElementById("wf-restore").disabled = !canRun;
+
+  if (!st.enabled) banner("Inyección de fallas DESACTIVADA (wan_control.enabled = false). Actívala en config para usar esta página.", "warn");
+  else if (!st.configured) banner("Falta FORTIGATE_CONTROL_TOKEN (token de escritura). Sin él no se puede cortar la WAN.", "warn");
+  else if (st.running) banner("⚠ WAN CAÍDA AHORA por un corte inducido — sin internet hasta que se restaure.", "bad");
+  else banner(st.mock_mode ? "Modo MOCK: los cortes se simulan, no tocan el FortiGate." : "", "warn");
+
+  setKpi("wf-k-state", st.running ? "CAÍDA (inducida)" : (canRun ? "OPERATIVO" : "—"),
+         st.running ? "kpi-bad" : (canRun ? "kpi-ok" : "kpi-muted"));
+  setKpi("wf-k-exp", st.running ? st.experiment_id : "—");
+  setKpi("wf-k-sched", st.schedule.enabled ? `${st.schedule.start_local} (${Math.round(st.schedule.outage_seconds/3600)} h)` : "desactivado");
+  tick();
+}
+
+function tick() {
+  if (!last || !last.running) { setKpi("wf-k-left", "—"); return; }
+  const left = last.ends_at - Date.now() / 1000;
+  if (left <= 0) { setKpi("wf-k-left", "restaurando…"); return; }
+  const h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), s = Math.floor(left % 60);
+  setKpi("wf-k-left", (h ? h + "h " : "") + `${m}m ${String(s).padStart(2, "0")}s`);
+}
+
+function renderRuns(runs) {
+  document.querySelector("#wf-table tbody").innerHTML = runs.map(r => {
+    const outcome = r.end_timestamp ? (r.notes || "").split("|").slice(1).join("|").trim() || "—" : "EN CURSO";
+    const bad = /RESTORE FAILED/.test(r.notes || "");
+    const dur = r.duration_seconds != null ? Math.round(r.duration_seconds / 60) + " min" : "—";
+    return `<tr class="${bad ? "sev-warning" : ""}">
+      <td>${PNLApi.fmtTime(r.start_timestamp)}</td><td>${esc(r.experiment_id)}</td>
+      <td>${esc(r.interface)}</td><td>${dur}</td>
+      <td>${PNLApi.fmtTime(r.failure_timestamp)}</td><td>${PNLApi.fmtTime(r.end_timestamp)}</td>
+      <td>${esc(outcome)}</td></tr>`;
+  }).join("") || `<tr><td colspan="7" class="muted">Aún no hay cortes inducidos.</td></tr>`;
+}
+
+async function refresh() {
+  const [st, runs] = await Promise.all([
+    PNLApi.get("/api/wan-control/status"), PNLApi.get("/api/wan-control/runs?hours=8760"),
+  ]);
+  render(st);
+  renderRuns(runs);
+}
+
+document.getElementById("wf-start").addEventListener("click", async () => {
+  const secs = Number(document.getElementById("wf-dur").value);
+  const mins = Math.round(secs / 60);
+  if (!confirm(`Se cortará la WAN (${document.getElementById("wf-iface").textContent}) durante ${mins} min. `
+    + `Toda la casa queda sin internet hasta que se restaure. ¿Continuar?`)) return;
+  const note = document.getElementById("wf-note");
+  note.textContent = "iniciando corte…";
+  const r = await fetch("/api/wan-control/outage/start", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ duration_seconds: secs }),
+  });
+  note.textContent = r.ok ? "" : "No se pudo iniciar: " + ((await r.json()).detail || r.status);
+  refresh();
+});
+document.getElementById("wf-restore").addEventListener("click", async () => {
+  document.getElementById("wf-note").textContent = "restaurando…";
+  await PNLApi.post("/api/wan-control/restore");
+  document.getElementById("wf-note").textContent = "";
+  refresh();
+});
+document.addEventListener("DOMContentLoaded", () => {
+  refresh();
+  setInterval(refresh, 5000);
+  setInterval(tick, 1000);
+});
+</script>
+{% endblock %}

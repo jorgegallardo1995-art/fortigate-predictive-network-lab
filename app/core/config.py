@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     fortigate_host: str = "10.254.0.1"
     fortigate_port: int = 443
     fortigate_api_token: str = ""
+    # Separate WRITE token for controlled fault injection (app/services/
+    # wan_control_service.py). Empty = fault injection disabled. NEVER the
+    # read token above.
+    fortigate_control_token: str = ""
     fortigate_vdom: str = "root"
     verify_ssl: bool = False
     fortigate_timeout: float = 10.0
@@ -110,6 +114,9 @@ class Settings(BaseSettings):
         """Return settings with the token redacted - safe for logs / metadata."""
         data = self.model_dump()
         data["fortigate_api_token"] = "***REDACTED***" if self.fortigate_api_token else ""
+        data["fortigate_control_token"] = (
+            "***REDACTED***" if self.fortigate_control_token else ""
+        )
         data["data_dir"] = str(self.data_dir)
         return data
 

@@ -222,6 +222,134 @@ def get_events(
     ]
 
 
+# --- speed tests ----------------------------------------------------------
+@router.get("/speedtests")
+def get_speedtests(hours: int = 168, data_source: str | None = None) -> list[dict[str, Any]]:
+    from app.services import speedtest_service
+
+    since = utc_now() - timedelta(hours=hours)
+    return speedtest_service.list_tests(since, data_source or _default_source())
+
+
+@router.get("/speedtests/summary")
+def get_speedtests_summary(hours: int = 168, data_source: str | None = None) -> dict[str, Any]:
+    from app.services import speedtest_service
+
+    since = utc_now() - timedelta(hours=hours)
+    return speedtest_service.summary(since, data_source or _default_source())
+
+
+@router.post("/speedtests/run")
+def run_speedtest_now() -> dict[str, Any]:
+    """Run one test right now (blocks ~30-60 s). 409 if one is already running."""
+    from app.services import speedtest_service
+
+    result = speedtest_service.run_speedtest(trigger="manual")
+    if result.get("skipped"):
+        raise HTTPException(409, "a speed test is already running")
+    return result
+
+
+# --- WAN fault injection ---------------------------------------------------
+class OutageStartIn(BaseModel):
+    duration_seconds: int | None = None
+
+
+@router.get("/wan-control/status")
+def wan_control_status() -> dict[str, Any]:
+    from app.services import wan_control_service
+
+    return wan_control_service.status()
+
+
+@router.get("/wan-control/runs")
+def wan_control_runs(hours: int = 720) -> list[dict[str, Any]]:
+    from app.services import wan_control_service
+
+    return wan_control_service.list_runs(utc_now() - timedelta(hours=hours))
+
+
+@router.post("/wan-control/outage/start", status_code=202)
+def wan_control_outage_start(payload: OutageStartIn | None = None) -> dict[str, Any]:
+    """Start an INDUCED WAN outage now (background, auto-restored). 409 if
+    disabled, unconfigured or already running."""
+    from app.services import wan_control_service
+
+    try:
+        return wan_control_service.start_outage((payload or OutageStartIn()).duration_seconds)
+    except wan_control_service.WanControlError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+class RampStartIn(BaseModel):
+    profile_kbps: list[int] | None = None
+    step_seconds: int | None = None
+
+
+@router.post("/wan-control/ramp/start", status_code=202)
+def wan_control_ramp_start(payload: RampStartIn | None = None) -> dict[str, Any]:
+    """Start an INDUCED bandwidth-degradation ramp (registered as a CONGESTION
+    experiment). 409 if disabled, unconfigured or already running."""
+    from app.services import wan_control_service
+
+    p = payload or RampStartIn()
+    try:
+        return wan_control_service.start_bandwidth_ramp(p.profile_kbps, step_seconds=p.step_seconds)
+    except wan_control_service.WanControlError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/wan-control/restore")
+def wan_control_restore() -> dict[str, Any]:
+    """Abort any active outage and restore the link now (kill switch)."""
+    from app.services import wan_control_service
+
+    return wan_control_service.stop()
+
+
+# --- congestion ramps ------------------------------------------------------
+class CongestionStartIn(BaseModel):
+    direction: str | None = None
+    profile_pct: list[float] | None = None
+    step_seconds: int | None = None
+
+
+@router.get("/congestion/status")
+def congestion_status() -> dict[str, Any]:
+    from app.services import congestion_service
+
+    return congestion_service.status()
+
+
+@router.get("/congestion/runs")
+def congestion_runs(hours: int = 720) -> list[dict[str, Any]]:
+    from app.services import congestion_service
+
+    return congestion_service.list_runs(utc_now() - timedelta(hours=hours))
+
+
+@router.post("/congestion/start", status_code=202)
+def congestion_start(payload: CongestionStartIn | None = None) -> dict[str, Any]:
+    """Start a congestion ramp in the background (registered as a CONGESTION
+    experiment). 409 if a ramp or speed test is running or iperf3 is not set up."""
+    from app.services import congestion_service
+
+    p = payload or CongestionStartIn()
+    try:
+        return congestion_service.start(
+            p.direction, profile_pct=p.profile_pct, step_seconds=p.step_seconds
+        )
+    except congestion_service.CongestionError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.post("/congestion/stop")
+def congestion_stop() -> dict[str, Any]:
+    from app.services import congestion_service
+
+    return congestion_service.stop()
+
+
 @router.get("/gaps")
 def get_gaps(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     return [
