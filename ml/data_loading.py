@@ -40,7 +40,8 @@ def _connect(db_path: str | Path) -> sqlite3.Connection:
 
 
 def load_raw(
-    db_path: str | Path, data_source: str = "REAL", since: str | None = None
+    db_path: str | Path, data_source: str = "REAL", since: str | None = None,
+    until: str | None = None,
 ) -> pd.DataFrame:
     """telemetry_raw for one data_source, ordered by time, only successful cycles.
 
@@ -62,6 +63,14 @@ def load_raw(
         ts = ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
         query += " AND timestamp_utc >= ?"
         params.append(ts.strftime("%Y-%m-%d %H:%M:%S"))
+    if until:
+        # Upper cutoff (inclusive), applied at LOAD time so every downstream
+        # artefact (labels, failure instants, dataset_period, metadata) reflects
+        # only data at or before the cutoff - no post-cutoff rows enter the run.
+        tu = pd.Timestamp(until)
+        tu = tu.tz_localize("UTC") if tu.tzinfo is None else tu.tz_convert("UTC")
+        query += " AND timestamp_utc <= ?"
+        params.append(tu.strftime("%Y-%m-%d %H:%M:%S"))
     query += " ORDER BY timestamp_utc"
     with _connect(db_path) as conn:
         df = pd.read_sql_query(query, conn, params=params, parse_dates=["timestamp_utc"])
@@ -141,14 +150,15 @@ def load_network_events(db_path: str | Path, event_types: tuple[str, ...]) -> pd
 
 
 def load_dataset(
-    db_path: str | Path, data_source: str = "REAL", since: str | None = None
+    db_path: str | Path, data_source: str = "REAL", since: str | None = None,
+    until: str | None = None,
 ) -> pd.DataFrame:
     """Merge telemetry_raw + pivoted ICMP into the wide frame the pipeline works on.
 
     One row per successful acquisition cycle, columns = the 23 input variables +
     the leakage-reserved status fields + labeling/bookkeeping columns.
     """
-    raw = load_raw(db_path, data_source, since=since)
+    raw = load_raw(db_path, data_source, since=since, until=until)
     probes = load_probe_results(db_path, data_source)
     if not probes.empty:
         df = raw.merge(probes, left_on="id", right_on="raw_id", how="left")

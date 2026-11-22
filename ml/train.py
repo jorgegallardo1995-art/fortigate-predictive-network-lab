@@ -78,6 +78,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
              "pilot window, e.g. a single day of controlled experiments, so the temporal "
              "split has positives in train/val/test instead of clustering them all in test)",
     )
+    p.add_argument(
+        "--until",
+        help="ISO8601 instant; restrict to telemetry at/before it (upper cutoff). Applied at "
+             "load time so labels, failure instants, dataset_period and metadata reflect ONLY "
+             "data <= cutoff (e.g. 2026-11-14T23:59:59Z to freeze a study period).",
+    )
     p.add_argument("--failures-json", help='JSON file: {"failure_timestamps": ["2026-...Z", ...]}')
     p.add_argument("--output-dir", default="data/models")
     p.add_argument("--synthetic-demo", action="store_true",
@@ -111,7 +117,7 @@ def main(argv: list[str] | None = None) -> int:
         failures = failures_from_manual(df.attrs["synthetic_failure_timestamps"])
         data_source = "SYNTHETIC"
     else:
-        df = load_dataset(args.db, args.data_source, since=args.since)
+        df = load_dataset(args.db, args.data_source, since=args.since, until=args.until)
         experiments_df = load_experiments(args.db)
         events_df = load_network_events(args.db, FAILURE_EVENT_TYPES)
         speed_tests_df = load_speed_tests(args.db, args.data_source)
@@ -125,6 +131,12 @@ def main(argv: list[str] | None = None) -> int:
         failures = predictive_failures(
             experiments_df, events_df, _load_manual_failures(args.failures_json), induced_plan
         )
+        if args.until:
+            def _to_utc(t):
+                t = pd.Timestamp(t)
+                return t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+            _ucut = _to_utc(args.until)
+            failures = [f for f in failures if _to_utc(f.failure_timestamp) <= _ucut]
         print(
             f"induced-load exclusion: dropped {rows_before - len(df):,} rows "
             f"({induced_plan.summary()}); "
@@ -270,6 +282,7 @@ def main(argv: list[str] | None = None) -> int:
         "platform": f"{platform.system()} {platform.machine()}",
         "data_source": data_source,
         "pilot_window_since": args.since,
+        "until_cutoff": args.until,
         "config": asdict(cfg),
         "feature_columns": feature_cols,
         "dataset_period": {

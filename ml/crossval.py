@@ -203,6 +203,9 @@ def parse_args(argv=None):
     p.add_argument("--since", default=None,
                    help="ISO date; restrict to telemetry at/after it (e.g. 2026-11-07 "
                         "for the randomised-schedule regime only, excluding the fixed-calendar history)")
+    p.add_argument("--until", default=None,
+                   help="ISO8601 instant; upper cutoff, applied at load time (e.g. "
+                        "2026-11-14T23:59:59Z to freeze the study period)")
     return p.parse_args(argv)
 
 
@@ -217,7 +220,7 @@ def main(argv=None) -> int:
     margin = args.margin_minutes if args.margin_minutes is not None else (
         cfg.window_minutes + cfg.horizon_minutes)
 
-    df = load_dataset(args.db, args.data_source, since=args.since)
+    df = load_dataset(args.db, args.data_source, since=args.since, until=args.until)
     if args.since:
         print(f"SINCE MODE: only telemetry at/after {args.since} (randomised regime).")
     experiments_df = load_experiments(args.db)
