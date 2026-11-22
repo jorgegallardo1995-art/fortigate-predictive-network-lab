@@ -21,3 +21,4 @@ G.19 arq,ventana30,0.336,audit (test distinto)
 F.15 FA/dia,LSTM/RF,90.3/26.8,audit FP/1.20d
 F.16 lead med,LSTM/RF,2.5/5.0,audit
 Inventario,exitosas<=14,94760,snap.db
+C.7 bootstrap evento · aleatorizado histórico (75 ev),LSTM − regla de umbral (PR-AUC): media / IC95 / P(>0) / estado,"+0,287 / [+0,224,+0,352] / 1,00 / CONFIRMA",run_20261122T144431Z (B=3000)
