@@ -55,3 +55,6 @@ logs/uvicorn.out
 /snap.db-shm
 /snap.db-wal
 data/monitor/
+
+# Study-period DB (shipped as a GitHub Release asset, never in the repo)
+fortigate_dataset_estudio.db*

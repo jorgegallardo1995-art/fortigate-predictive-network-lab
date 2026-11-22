@@ -68,10 +68,19 @@ Los resultados deben coincidir con los artefactos de `docs/modelo/` (determinism
 
 ## 6. Base de datos del estudio
 
-El dataset vive en una base SQLite de la fase experimental (varios cientos de MB). Por su tamaño
-no se incluye en el repositorio; se entrega como archivo descargable aparte. El esquema de tablas
-y el diccionario de las 23 variables están en cada `docs/modelo/*/run_metadata.json` y en
-`app/database/models.py`.
+El dataset de la fase experimental vive en una base SQLite. Por su tamaño no se incluye en el
+repositorio; se entrega como **archivo descargable en la sección _Releases_** de este repositorio:
+`fortigate_dataset_estudio.db.gz` (~102 MB comprimido, ~469 MB descomprimido).
+
+```bash
+# descargar desde la pestaña "Releases" del repositorio y descomprimir:
+gunzip fortigate_dataset_estudio.db.gz
+mv fortigate_dataset_estudio.db snap.db
+# luego usar los comandos de §4
+```
+
+El esquema de tablas y el diccionario de las 23 variables están en cada
+`docs/modelo/*/run_metadata.json` y en `app/database/models.py`.
 
 ## 7. Punto de referencia congelado
 
