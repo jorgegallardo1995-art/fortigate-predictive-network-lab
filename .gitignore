@@ -49,3 +49,9 @@ htmlcov/
 
 # local dev server stdout
 logs/uvicorn.out
+
+# Local analysis snapshot (never commit the 1GB DB) + monitor logs
+/snap.db
+/snap.db-shm
+/snap.db-wal
+data/monitor/

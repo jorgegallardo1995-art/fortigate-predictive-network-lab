@@ -132,7 +132,7 @@ backup:
   schedule_minute: 0
   keep_days: 7             # valid backups kept on this host; archive them elsewhere
   filename_prefix: "fortigate_"
-  compress_level: 6        # gzip level for fortigate_<date>.db.gz (~15x smaller)
+  compress_level: 1        # gzip level 1: fast on the Pi 3 so the midnight backup no longer pegs the CPU and hangs the API (level 6 took minutes; file ~25% larger)
 
 # --- Retention -------------------------------------------------------------------
 # Clears raw_json (the large raw API payload, ~40KB/row) on telemetry_raw rows
@@ -150,13 +150,14 @@ retention:
 # Hourly active throughput test from the Pi: saturates the WAN ~30 s on purpose.
 # Each test's [started_at, finished_at] is stored in speed_tests so analyses can
 # tell this self-inflicted load from organic traffic. Install the CLI with
-# scripts/install_speedtest.sh; pin server_id so results stay comparable.
+# scripts/install_speedtest.sh. server_id is left null so each run auto-selects a
+# server: pinning one tripped Ookla's "Too many requests" limit during ramp bursts.
 speedtest:
   enabled: true
   minute: 30               # runs every hour at HH:30 UTC
   skip_hours_utc: [3]      # daily backup + raw_json retention run at 03:xx UTC
   binary: speedtest        # official Ookla CLI, not the python speedtest-cli
-  server_id: 11508         # Grupo GTD, Santiago - `speedtest -L` lists nearby servers
+  server_id: null          # auto-select best server per run: pinning one server made Ookla reject ramp bursts with "exit 173: Too many requests"
   timeout_seconds: 120
 
 # --- Congestion ramps (iperf3) -------------------------------------------------
@@ -212,8 +213,8 @@ wan_control:
   # model cannot learn the experimenter's calendar (reviewer Bloque 2);
   # 'fixed' = the hours above. Random uses count/min-gap below.
   ramp_schedule_mode: random
-  ramp_random_count: 6          # ramps per day (randomised times)
-  ramp_random_min_gap_hours: 2  # minimum spacing between ramps
+  ramp_random_count: 12         # ramps/day (randomised times) - denser positive sample
+  ramp_random_min_gap_hours: 1  # min spacing; slot=2h leaves ~1h of jitter per ramp
 
 # --- Injected latency / loss degradation (tc netem on the Pi) --------------------
 # Gives the reviewer's LATENCY_DEGRADATION / PACKET_LOSS scenarios (Bloque 2): a
@@ -229,8 +230,8 @@ netem:
   max_delay_ms: 500               # safety cap
   max_loss_pct: 20                # safety cap
   schedule_enabled: true          # randomised times each day (Bloque 2)
-  random_count: 3                 # latency/loss ramps per day
-  random_min_gap_hours: 3
+  random_count: 6                 # latency/loss ramps per day - denser positive sample
+  random_min_gap_hours: 2         # slot=4h leaves ~2h of jitter per ramp
   profile:
     - {delay_ms: 0,   jitter_ms: 0,  loss_pct: 0}
     - {delay_ms: 30,  jitter_ms: 10, loss_pct: 0.5}

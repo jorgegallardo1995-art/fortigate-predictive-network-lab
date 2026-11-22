@@ -22,12 +22,30 @@ import json
 import os
 import smtplib
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from email.message import EmailMessage
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parents[1]
 MODELS_DIR = APP_DIR / "data" / "models"
+
+# Thesis resubmission deadline. The reviewer gave 20 days; day 1 was 2026-11-06
+# ("ayer fue el día 1" said on 2026-11-07), so day 20 — the handover — is
+# 2026-11-25. Anchored to fixed dates so the countdown updates itself each day.
+THESIS_DAY_ONE = date(2026, 11, 6)
+THESIS_DEADLINE = date(2026, 11, 25)
+
+
+def _deadline_tag() -> str:
+    """Short countdown for the email subject, e.g. 'quedan 17 días'."""
+    days_left = (THESIS_DEADLINE - date.today()).days
+    if days_left < 0:
+        return "entrega VENCIDA"
+    if days_left == 0:
+        return "ENTREGA HOY"
+    if days_left == 1:
+        return "queda 1 día"
+    return f"quedan {days_left} días"
 
 
 def _load(path: Path) -> dict:
@@ -66,7 +84,7 @@ def build_report() -> tuple[str, str]:
     runs = _full_history_runs()
     today = datetime.now(UTC).strftime("%Y-%m-%d")
     if not runs:
-        return (f"[Tesis] Sin corridas de entrenamiento ({today})",
+        return (f"[Tesis · {_deadline_tag()}] Sin corridas de entrenamiento ({today})",
                 "No hay corridas de entrenamiento en data/models/. "
                 "Revisa que el entrenamiento programado esté corriendo.")
 
@@ -228,7 +246,7 @@ def build_report() -> tuple[str, str]:
       "Entregar este informe a la IA que mantiene el documento de tesis.*")
 
     recall_txt = _fmt(lstm.get("recall"), 2)
-    subject = f"[Tesis] Avance del modelo {today} — recall {recall_txt}, {flow.get('distinct_failures','?')} fallas"  # noqa: E501
+    subject = f"[Tesis · {_deadline_tag()}] Avance {today} — recall {recall_txt}, {flow.get('distinct_failures','?')} fallas"  # noqa: E501
     return subject, "\n".join(lines)
 
 

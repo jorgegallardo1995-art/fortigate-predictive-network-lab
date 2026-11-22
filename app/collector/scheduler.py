@@ -38,18 +38,28 @@ def plan_ramp_times(
     min_gap_hours: float,
     rng: _random.Random,
     horizon_hours: float = 24.0,
+    avoid_hours: frozenset[int] = frozenset(),
 ) -> list[datetime]:
     """Pick ``count`` randomised ramp times within [day_start, +horizon), each at
     least ``min_gap_hours`` apart. One random time per equal slot, jittered only
     within the room the min-gap leaves, so spacing is guaranteed (reviewer
-    Bloque 2: events at sorted, wide intervals, not a fixed calendar)."""
+    Bloque 2: events at sorted, wide intervals, not a fixed calendar).
+
+    A time whose UTC hour is in ``avoid_hours`` (the daily backup/retention
+    window) is re-rolled within its slot, so a ramp + speed test never competes
+    with the backup for the Pi 3's CPU and hangs the API. With the default empty
+    set the first roll is always kept, so behaviour is unchanged."""
     count = max(1, int(count))
     slot = horizon_hours / count
     jitter = max(0.0, slot - float(min_gap_hours))
     times: list[datetime] = []
     for i in range(count):
-        offset_h = i * slot + rng.uniform(0.0, jitter)
-        times.append(day_start + timedelta(hours=offset_h))
+        t = day_start + timedelta(hours=i * slot + rng.uniform(0.0, jitter))
+        for _ in range(7):  # escape an avoided hour when the jitter leaves room
+            if t.hour not in avoid_hours:
+                break
+            t = day_start + timedelta(hours=i * slot + rng.uniform(0.0, jitter))
+        times.append(t)
     return times
 
 
@@ -385,7 +395,13 @@ class CollectorScheduler:
             day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
             # Seed per day AND per kind so ramps and netem get different times.
             seed = now.timetuple().tm_yday * 10 + (0 if kind == "ramp" else 7)
-            times = plan_ramp_times(day_start, count, gap, _random.Random(seed))
+            # Never land a heavy event on the backup/retention hour (Pi 3 CPU).
+            avoid = frozenset({
+                int(self.cfg.get("backup.schedule_hour", 3)),
+                int(self.cfg.get("retention.schedule_hour", 3)),
+            })
+            times = plan_ramp_times(day_start, count, gap, _random.Random(seed),
+                                    avoid_hours=avoid)
             scheduled = 0
             for t in times:
                 if t <= now + timedelta(seconds=30):

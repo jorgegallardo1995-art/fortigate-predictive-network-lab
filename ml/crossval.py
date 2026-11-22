@@ -200,6 +200,9 @@ def parse_args(argv=None):
     p.add_argument("--variant", choices=["reference", "bidirectional"], default=None,
                    help="LSTM architecture variant (default: config's 'reference')")
     p.add_argument("--output", default=None, help="write the JSON report here")
+    p.add_argument("--since", default=None,
+                   help="ISO date; restrict to telemetry at/after it (e.g. 2026-11-07 "
+                        "for the randomised-schedule regime only, excluding the fixed-calendar history)")
     return p.parse_args(argv)
 
 
@@ -214,7 +217,9 @@ def main(argv=None) -> int:
     margin = args.margin_minutes if args.margin_minutes is not None else (
         cfg.window_minutes + cfg.horizon_minutes)
 
-    df = load_dataset(args.db, args.data_source)
+    df = load_dataset(args.db, args.data_source, since=args.since)
+    if args.since:
+        print(f"SINCE MODE: only telemetry at/after {args.since} (randomised regime).")
     experiments_df = load_experiments(args.db)
     events_df = load_network_events(args.db, FAILURE_EVENT_TYPES)
     speed_tests_df = load_speed_tests(args.db, args.data_source)

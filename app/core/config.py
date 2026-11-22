@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     )
 
     # --- FortiGate REST API ---
-    fortigate_host: str = "10.254.0.1"
+    fortigate_host: str = "10.254.0.254"
     fortigate_port: int = 443
     fortigate_api_token: str = ""
     # Separate WRITE token for controlled fault injection (app/services/
