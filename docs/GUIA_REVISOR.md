@@ -99,6 +99,11 @@ mv fortigate_dataset_estudio.db snap.db
 El esquema de tablas y el diccionario de las 23 variables están en cada
 `docs/modelo/*/run_metadata.json` y en `app/database/models.py`.
 
+> **Privacidad del dataset publicado.** El Release tiene redactadas (NULL) las columnas de payload
+> crudo y de identificación de equipo (`telemetry_raw.raw_json/serial_number/device_hostname`,
+> `speed_tests.raw_json/error`). El modelo no usa ninguna de ellas: las cifras del Cap. 4 se
+> reproducen de forma idéntica. Detalle, verificación y hashes en `docs/DECLARACION_DATOS.md`.
+
 ## 7. Punto de referencia congelado
 
 El estado evaluado está marcado con el tag **`tesis-cap4-freeze`**:

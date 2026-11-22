@@ -1,0 +1,14 @@
+id_evento,escenario,mecanismo,inicio_utc,T_f_utc,restablecimiento_utc,duracion_min,particion,detectado_LSTM,lead_LSTM_min,detectado_RF,lead_RF_min
+E01,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-13 16:12:46,2026-11-13 16:18:47,2026-11-13 16:22:47,10.0,test,sí,3.0,sí,5.0
+E02,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-13 18:54:09,2026-11-13 19:00:09,2026-11-13 19:04:09,10.0,test,sí,4.0,sí,5.0
+E03,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-13 20:33:16,2026-11-13 20:39:16,2026-11-13 20:43:16,10.0,test,no,,no,
+E04,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-13 22:27:09,2026-11-13 22:33:09,2026-11-13 22:37:09,10.0,test,sí,0.0,sí,1.0
+E05,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-14 00:39:38,2026-11-14 00:45:38,2026-11-14 00:49:39,10.0,test,sí,0.0,sí,0.0
+E06,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-14 02:25:35,2026-11-14 02:31:35,2026-11-14 02:35:35,10.0,test,sí,2.0,sí,2.0
+E07,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-14 04:02:00,2026-11-14 04:08:00,2026-11-14 04:12:00,10.0,test,no,,sí,5.0
+E08,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-14 06:39:39,2026-11-14 06:45:39,2026-11-14 06:49:39,10.0,test,sí,0.0,sí,0.0
+E09,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-14 10:36:34,2026-11-14 10:42:34,2026-11-14 10:46:34,10.0,test,no,,no,
+E10,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-14 12:21:45,2026-11-14 12:27:45,2026-11-14 12:31:45,10.0,test,sí,5.0,sí,5.0
+E11,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-14 14:18:28,2026-11-14 14:24:28,2026-11-14 14:28:28,10.0,test,sí,2.0,sí,5.0
+E12,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-14 16:32:32,2026-11-14 16:38:32,2026-11-14 16:42:32,10.0,test,no,,no,
+E13,CONGESTION,"shaper FortiGate (API, wan1)",2026-11-14 18:06:24,2026-11-14 18:12:24,2026-11-14 18:16:24,10.0,test,sí,5.0,sí,5.0
