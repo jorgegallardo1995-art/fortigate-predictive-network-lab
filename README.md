@@ -3,7 +3,7 @@
 *FortiGate Telemetry & Network Continuity Research Platform*
 
 A 24/7 telemetry collector that builds a **traceable, reproducible, multivariate
-time-series dataset** from a FortiGate 50F, for the experimental phase of a
+time-series dataset** from a FortiGate 50E, for the experimental phase of a
 doctoral thesis on early prediction of failures in telecommunications networks
 (LSTM). **This software does not train models.** It captures, stores, validates,
 visualises, documents and exports the experimental data.
@@ -23,7 +23,7 @@ recomputable; gaps are recorded, never back-filled; MOCK and REAL data never mix
 ## 2. Architecture
 
 ```
-FortiGate 50F ──HTTPS/GET──► Raspberry Pi (one process)
+FortiGate 50E ──HTTPS/GET──► Raspberry Pi (one process)
                               ├─ APScheduler  (1 cycle / 60 s, no overlap)
                               ├─ TelemetryCollector → FortiGateClient (GET only)
                               │                     └ MockProvider (MOCK_MODE)
@@ -43,7 +43,7 @@ One `systemd` service. See [app/](app/) for the module layout.
 
 - Python **3.11+** (3.12 recommended).
 - macOS Apple Silicon *or* Linux ARM64. No macOS-only dependencies.
-- FortiGate 50F with a **read-only REST API admin** (token) and, for network-quality
+- FortiGate 50E with a **read-only REST API admin** (token) and, for network-quality
   metrics, **SD-WAN + Performance SLA health-checks** configured in measurement-only
   mode. See §5–6.
 

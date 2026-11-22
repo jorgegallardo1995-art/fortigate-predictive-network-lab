@@ -1,0 +1,10 @@
+conjunto,modelo,umbral,pr_auc,roc_auc,precision,recall,falsas_alarmas_dia
+Régimen limpio (7-14 nov) · split temporal,LSTM,0.6,0.197,0.474,0.229,0.232,90.3
+Régimen limpio (7-14 nov) · split temporal,Random Forest,0.6,0.404,0.535,,,
+Régimen limpio (7-14 nov) · split temporal,Naive calendario,0.6,0.253,0.717,,,
+Régimen limpio · walk-forward (pooled),LSTM,,0.314,,,event-recall 0.569,23.4
+Régimen limpio · walk-forward (pooled),Random Forest,,0.435,,,,
+Régimen limpio · walk-forward (pooled),Naive calendario,,0.273,,,,
+Full-history (histórico),LSTM,0.7,0.497,0.682,0.796,0.338,10.9
+Full-history (histórico),Random Forest,0.7,0.522,,,,
+Full-history (histórico),Naive calendario (ajustada),0.7,0.106,,,,
