@@ -29,6 +29,15 @@ recall, F1, matriz de confusión, falsas alarmas/día y lead time) para la LSTM 
 base (Random Forest y naive de calendario). Cada `run_metadata.json` documenta configuración,
 features, particiones, semilla y commit.
 
+> **Conteo de eventos de prueba (13, no 14).** El campo `lead_time.events_evaluated` del
+> `metrics.json` vale 14 porque cuenta *corridas positivas contiguas*. La tesis usa
+> **13 eventos independientes**, excluyendo la corrida de borde 2026-11-14 19:56→20:10 UTC,
+> cuyo instante de falla (T_f) cae justo fuera de la ventana de prueba. Con el criterio de 13
+> eventos: la LSTM detecta **9/13** y el RF **10/13**; lead mediano **2,0 / 5,0 min**; con
+> anticipación ≥ 3 min 4 / 6 y ≥ 5 min 2 / 6 (ver `docs/resultados/cifras_capitulo4.csv` y
+> `docs/graficos/lead_por_modelo.*`). Este recuento **no afecta** ninguna métrica de modelo
+> (PR-AUC, ROC-AUC, IC bootstrap, FA/día), que son independientes del evaluador de lead.
+
 ## 3. Configuración del modelo (fuente: `ml/config.py`)
 
 LSTM(64) → Dropout(0,2) → LSTM(32) → Dropout(0,2) → Dense(16, ReLU) → Dropout(0,2) → Dense(1, sigmoid).
