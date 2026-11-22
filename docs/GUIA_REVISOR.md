@@ -17,11 +17,12 @@ pipeline de entrenamiento/evaluación del modelo LSTM.
 
 ## 2. Dónde está el modelo entrenado
 
-`docs/modelo/`:
-- `run_20261120T150158Z/` — modelo sobre el histórico completo:
+`docs/modelo/` (corridas con corte explícito `--until 2026-11-14T23:59:59Z`; su
+`run_metadata.json` registra `until_cutoff`, `dataset_period` real y el commit del árbol limpio):
+- `run_20261122T144431Z/` — modelo sobre el histórico completo:
   `model.keras`, `metrics.json`, `run_metadata.json`, `scaler.json`.
-- `run_20261122T013409Z/` — modelo sobre el régimen de inyección aleatorizado.
-- `crossval_randomized_FRESH.json` — validación cruzada walk-forward (4 pliegues, por evento).
+- `run_20261122T144340Z/` — modelo sobre el régimen de inyección aleatorizado.
+- `crossval_randomized.json` — validación cruzada walk-forward (4 pliegues, por evento).
 
 Cada `metrics.json` trae las métricas en el conjunto de prueba (PR-AUC, ROC-AUC, precisión,
 recall, F1, matriz de confusión, falsas alarmas/día y lead time) para la LSTM y las líneas
@@ -47,15 +48,22 @@ pip install -r requirements.txt            # y requirements-ml.txt para TensorFl
 
 # 2. Base de datos del estudio (se entrega aparte por tamaño; ver §6) como ./snap.db
 
-# 3. Entrenamiento full-history
-python -m ml.train --db snap.db --data-source REAL
+# 3. Entrenamiento full-history (con corte del periodo del estudio)
+python -m ml.train --db snap.db --data-source REAL --until 2026-11-14T23:59:59Z
+
+# 3b. Régimen de inyección aleatorizado
+python -m ml.train --db snap.db --since 2026-11-07 --until 2026-11-14T23:59:59Z
 
 # 4. Validación cruzada walk-forward por evento
-python -m ml.crossval --db snap.db --folds 4
+python -m ml.crossval --db snap.db --since 2026-11-07 --until 2026-11-14T23:59:59Z --folds 4
 ```
 
-Los resultados deben coincidir con los artefactos de `docs/modelo/` (determinismo acotado por
-`seed=42`; TensorFlow puede tener variación menor por kernels no deterministas).
+El parámetro `--until` aplica el corte del periodo de estudio AL CARGAR los datos, de modo que
+las etiquetas, los instantes de falla, `dataset_period` y el metadata reflejan solo datos dentro
+del periodo. Los resultados deben coincidir con los artefactos de `docs/modelo/` (determinismo
+acotado por `seed=42`; TensorFlow puede tener variación menor por kernels no deterministas). La
+base publicada en Releases ya está acotada al periodo, por lo que `--until` es redundante sobre
+ella pero deja el corte explícito y auto-documentado.
 
 ## 5. Integridad y anti-fuga (verificable en código)
 

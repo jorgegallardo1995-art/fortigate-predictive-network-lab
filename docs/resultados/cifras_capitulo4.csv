@@ -1,14 +1,14 @@
 tabla_destino,cifra,valor,fuente
-Tabla 9.1 clean 23v,LSTM PR-AUC,0.197,run_20261122T013409Z
-Tabla 9.1 clean 23v,RF PR-AUC,0.404,run_20261122T013409Z
-Tabla 9.1 clean 23v,Naive/Oracle PR-AUC,0.253,run_20261122T013409Z
+Tabla 9.1 clean 23v,LSTM PR-AUC,0.197,run_20261122T144340Z
+Tabla 9.1 clean 23v,RF PR-AUC,0.404,run_20261122T144340Z
+Tabla 9.1 clean 23v,Naive/Oracle PR-AUC,0.253,run_20261122T144340Z
 Tabla 9.1 clean 20v,LSTM PR-AUC,0.213,audit 7-14 20v
 Tabla 9.1 clean 20v,RF PR-AUC,0.368,audit 7-14 20v
-Tabla full<=14 23v,LSTM PR-AUC,0.497,run_20261120T150158Z
-Tabla full<=14 23v,RF PR-AUC,0.522,run_20261120T150158Z
+Tabla full<=14 23v,LSTM PR-AUC,0.497,run_20261122T144431Z
+Tabla full<=14 23v,RF PR-AUC,0.522,run_20261122T144431Z
 Tabla full<=14 20v,LSTM PR-AUC,0.51,audit full 20v
-Walk-forward,LSTM pooled,0.314,crossval_randomized_FRESH.json
-Walk-forward,RF pooled,0.435,crossval_randomized_FRESH.json
+Walk-forward,LSTM pooled,0.314,crossval_randomized.json
+Walk-forward,RF pooled,0.435,crossval_randomized.json
 C.7 boot clean,RF-LSTM media,0.194,audit B=3000
 C.7 boot clean,RF-LSTM IC95,"[0.095, 0.284]",audit
 C.7 boot clean,LSTM-oracle media,-0.113,audit
