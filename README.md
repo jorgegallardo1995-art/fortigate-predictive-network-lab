@@ -271,3 +271,31 @@ on the Pi even though training never does.
 FortiOS 6.0.4). 15–17 (Raspberry deployment & 24/7 validation): **done**, running
 in production with a watchdog. LSTM (`ml/`): pipeline **done**; real training is
 blocked on ground truth - see §22.
+
+---
+
+## Reproducir resultados del Capítulo 4
+
+Entorno exacto en `requirements-cap4.txt` (Python 3.12.14, TensorFlow 2.21.0, scikit-learn 1.9.1,
+numpy 2.5.3, pandas 2.3.3, scipy 1.18.1, matplotlib 3.11.2).
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements-cap4.txt
+
+# Dataset del estudio (Release, corte 2026-11-14) -> snap.db
+gunzip fortigate_dataset_estudio.db.gz && mv fortigate_dataset_estudio.db snap.db
+```
+
+| Resultado | Comando | Salida |
+|---|---|---|
+| Modelo histórico | `python -m ml.train --db snap.db --data-source REAL --until 2026-11-14T23:59:59Z` | `data/models/run_*/` |
+| Modelo régimen aleatorizado | `python -m ml.train --db snap.db --since 2026-11-07 --until 2026-11-14T23:59:59Z` | `data/models/run_*/` |
+| Walk-forward | `python -m ml.crossval --db snap.db --since 2026-11-07 --until 2026-11-14T23:59:59Z --folds 4` | `data/models/crossval_*.json` |
+| Bootstrap PR-AUC (§4.9) | `python -m scripts.bootstrap_prauc_diferencias --db snap.db` | `docs/resultados/bootstrap_prauc.{json,csv}`, `bootstrap_prauc_tabla.md` |
+| Naive + IC de lead | `python -m scripts.audit_baseline_lead --db snap.db` | consola |
+| Figura 10 (registro) | `python -m scripts.figura10_desde_registro` | `docs/graficos/figura10_registro_eventos.png` |
+
+Artefactos de modelo ya entrenados: `docs/modelo/run_20261122T144340Z` (régimen aleatorizado) y
+`run_20261122T144431Z` (histórico). Los hashes SHA-256 de los vectores de predicción usados por el
+bootstrap están en `docs/resultados/bootstrap_prauc.json`.

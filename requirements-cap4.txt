@@ -1,0 +1,8 @@
+# Entorno exacto para reproducir los resultados del Capítulo 4 (análisis/ML).
+# Python 3.12.14
+tensorflow==2.21.0
+scikit-learn==1.9.1
+numpy==2.5.3
+pandas==2.3.3
+scipy==1.18.1
+matplotlib==3.11.2
