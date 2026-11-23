@@ -57,10 +57,11 @@ El modelo **no usa** ninguna de estas columnas, por lo que las cifras no cambian
 | `telemetry_raw.device_hostname` | `FGT50E5619016282` |
 | `speed_tests.raw_json` | resultado Ookla: MAC del Pi `B8:27:EB:EA:D3:27`, IP pública del sitio `181.42.179.81`, IP LAN `10.254.0.10`, ISP, URLs |
 | `speed_tests.error` | logs de error crudos (JSON) |
+| `speed_tests.result_url` | enlaces a resultados speedtest.net (exponen IP pública/ISP al abrirse) |
 
 **Verificación (previa a publicar):**
 - **2a — integridad:** comparación por columna (SHA-256) original vs limpia: **todas las columnas de
-  estudio son idénticas**, filas idénticas en las 13 tablas; solo difieren las 5 columnas redactadas.
+  estudio son idénticas**, filas idénticas en las 13 tablas; solo difieren las 6 columnas redactadas.
 - **2b — reproducibilidad:** las 8 cifras del Cap. 4 se reproducen **exactas** desde la base limpia
   (régimen sin sesgo LSTM 0,197 / RF 0,404 / umbral 0,172 / calendario 0,253; prueba aleatorizada
   LSTM 0,431 / RF 0,484 / umbral 0,146 / oráculo 0,203; Δ = 0,000 en todas).
@@ -72,8 +73,8 @@ El modelo **no usa** ninguna de estas columnas, por lo que las cifras no cambian
 | Archivo | SHA-256 |
 |---|---|
 | Base ORIGINAL (con payloads crudos) | `073b014d46d46b6c0f98ccb8a2426fc938715af22a52101b28d820571ce7e39d` |
-| Base LIMPIA (descomprimida) | `fbdd13baf64df04c8bec743453461c99f146a7d713f62bc9d86b872919a83608` |
-| Asset publicado `fortigate_dataset_estudio.db.gz` (limpio) | `946a4bb0f9b7fb47344c70db686f22da6d89ea0e540bce510f00ba8e6ff18ac9` |
+| Base LIMPIA (descomprimida) | `0880dac27e2625d5ddc26c1b599ea0a194d1e3532b3d6e6f13bd00b72c8f4a4d` |
+| Asset publicado `fortigate_dataset_estudio.db.gz` (limpio) | `93ee8a624b946b6d61fba2447c85ada1d30d4f58dbed9364d28857afb3af6492` |
 
 ---
 
