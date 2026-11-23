@@ -19,9 +19,10 @@ G.18 semillas full,LSTM media/sd,0.496/0.018,5 seeds
 G.19 arq,GRU,0.289,audit
 G.19 arq,ventana30,0.336,audit (test distinto)
 F.15 FA/dia,LSTM/RF,90.3/26.8,audit FP/1.20d
-F.16 lead mediano (13 eventos · sin evento de borde 2026-11-14 20:10),LSTM/RF,2.0/5.0,audit
+F.16 lead mediano (13 eventos · T_f real [T_f-6 T_f]),LSTM/RF,4.5/5.3,audit (antes 2.0/5.0 por proxy run_end)
+F.16 lead medio (13 eventos),LSTM/RF,3.43/4.33,audit (antes 2.33/3.30)
 F.16 detección por evento (13 eventos),LSTM/RF,9/13 · 10/13,audit
-F.16 lead >= 3 min (13 eventos),LSTM/RF,4 · 6,audit
-F.16 lead >= 5 min (13 eventos),LSTM/RF,2 · 6,audit
+F.16 lead >= 3 min (13 eventos),LSTM/RF,6 · 8,audit (antes 4 · 6)
+F.16 lead >= 5 min (13 eventos),LSTM/RF,3 · 8,audit (antes 2 · 6)
 Inventario,exitosas<=14,94760,snap.db
 C.7 bootstrap evento · aleatorizado histórico (75 ev),LSTM − regla de umbral (PR-AUC): media / IC95 / P(>0) / estado,"+0,287 / [+0,224,+0,352] / 1,00 / CONFIRMA",run_20261122T144431Z (B=3000)
