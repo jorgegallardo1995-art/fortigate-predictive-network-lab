@@ -1,0 +1,88 @@
+{
+  "limpio": {
+    "prevalencia_prueba": 0.1659,
+    "comparaciones": {
+      "RF - LSTM": {
+        "PRAUC_a": 0.4044,
+        "PRAUC_b": 0.1973,
+        "resta_puntual": 0.2071,
+        "media": 0.193,
+        "mediana": 0.1961,
+        "ic_low": 0.0878,
+        "ic_high": 0.2835,
+        "descartadas": 0,
+        "prev_media": 0.1671,
+        "sesgo_media_menos_puntual": -0.0141
+      },
+      "LSTM - oraculo": {
+        "PRAUC_a": 0.1973,
+        "PRAUC_b": 0.2534,
+        "resta_puntual": -0.0561,
+        "media": -0.1131,
+        "mediana": -0.0749,
+        "ic_low": -0.3737,
+        "ic_high": 0.071,
+        "descartadas": 0,
+        "prev_media": 0.1671,
+        "sesgo_media_menos_puntual": -0.057
+      },
+      "LSTM - umbral": {
+        "PRAUC_a": 0.1973,
+        "PRAUC_b": 0.1719,
+        "resta_puntual": 0.0254,
+        "media": 0.0414,
+        "mediana": 0.0295,
+        "ic_low": -0.0273,
+        "ic_high": 0.1657,
+        "descartadas": 0,
+        "prev_media": 0.1671,
+        "sesgo_media_menos_puntual": 0.016
+      }
+    }
+  },
+  "diagnostico_signo_limpio_LSTM_oraculo": {
+    "signo_fijo_media": -0.1131,
+    "signo_reelegido_media": -0.1131
+  },
+  "aleatorizado": {
+    "prevalencia_prueba": 0.1445,
+    "comparaciones": {
+      "RF - LSTM": {
+        "PRAUC_a": 0.4839,
+        "PRAUC_b": 0.4309,
+        "resta_puntual": 0.053,
+        "media": 0.0527,
+        "mediana": 0.0531,
+        "ic_low": -0.0021,
+        "ic_high": 0.105,
+        "descartadas": 0,
+        "prev_media": 0.1454,
+        "sesgo_media_menos_puntual": -0.0003
+      },
+      "LSTM - oraculo": {
+        "PRAUC_a": 0.4309,
+        "PRAUC_b": 0.2032,
+        "resta_puntual": 0.2277,
+        "media": 0.2197,
+        "mediana": 0.2211,
+        "ic_low": 0.1305,
+        "ic_high": 0.3016,
+        "descartadas": 0,
+        "prev_media": 0.1454,
+        "sesgo_media_menos_puntual": -0.008
+      },
+      "LSTM - umbral": {
+        "PRAUC_a": 0.4309,
+        "PRAUC_b": 0.1455,
+        "resta_puntual": 0.2854,
+        "media": 0.2869,
+        "mediana": 0.2873,
+        "ic_low": 0.222,
+        "ic_high": 0.3557,
+        "descartadas": 0,
+        "prev_media": 0.1454,
+        "sesgo_media_menos_puntual": 0.0016
+      }
+    }
+  }
+}
