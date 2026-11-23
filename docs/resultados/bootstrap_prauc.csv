@@ -1,0 +1,7 @@
+regimen,comparacion,media,ic_low,ic_high,p>0,estado,tesis_media,tesis_low,tesis_high,|dif_media|
+limpio,LSTM - oraculo,-0.113,-0.374,0.071,0.14,INCONCLUSO,-0.113,-0.375,0.065,0.0
+limpio,LSTM - umbral,0.041,-0.026,0.166,0.805,INCONCLUSO,0.04,-0.031,0.153,0.001
+limpio,RF - LSTM,0.191,0.084,0.282,1.0,CONFIRMA,0.194,0.095,0.284,0.003
+aleatorizado,LSTM - oraculo,0.22,0.13,0.302,1.0,CONFIRMA,0.22,0.13,0.302,0.0
+aleatorizado,LSTM - umbral,0.288,0.223,0.354,1.0,CONFIRMA,0.287,0.222,0.356,0.001
+aleatorizado,RF - LSTM,0.053,-0.002,0.109,0.971,INCONCLUSO,0.053,-0.002,0.105,0.0

@@ -1,0 +1,114 @@
+{
+  "resultados": {
+    "limpio": {
+      "LSTM - oraculo": {
+        "media": -0.113,
+        "ic_low": -0.374,
+        "ic_high": 0.071,
+        "p_mayor_0": 0.14,
+        "estado": "INCONCLUSO"
+      },
+      "LSTM - umbral": {
+        "media": 0.041,
+        "ic_low": -0.026,
+        "ic_high": 0.166,
+        "p_mayor_0": 0.805,
+        "estado": "INCONCLUSO"
+      },
+      "RF - LSTM": {
+        "media": 0.191,
+        "ic_low": 0.084,
+        "ic_high": 0.282,
+        "p_mayor_0": 1.0,
+        "estado": "CONFIRMA"
+      }
+    },
+    "aleatorizado": {
+      "LSTM - oraculo": {
+        "media": 0.22,
+        "ic_low": 0.13,
+        "ic_high": 0.302,
+        "p_mayor_0": 1.0,
+        "estado": "CONFIRMA"
+      },
+      "LSTM - umbral": {
+        "media": 0.288,
+        "ic_low": 0.223,
+        "ic_high": 0.354,
+        "p_mayor_0": 1.0,
+        "estado": "CONFIRMA"
+      },
+      "RF - LSTM": {
+        "media": 0.053,
+        "ic_low": -0.002,
+        "ic_high": 0.109,
+        "p_mayor_0": 0.971,
+        "estado": "INCONCLUSO"
+      }
+    }
+  },
+  "meta": {
+    "limpio": {
+      "label": "Régimen limpio (13 eventos)",
+      "eventos": 13,
+      "n_test": 832,
+      "prevalencia": 0.166,
+      "hashes_sha256": {
+        "LSTM": "bd4abfc1166a661e58792da6c5042b5ee937f331ceb09b8f4b2ba25f19c58c96",
+        "RF": "48c08944ff46224b29f6b08abbb410a6bf9c5771ae4e52486a4ed42bc9e0e984",
+        "umbral": "32893d41836c0dc5e7c43e7633928d93f1368ce7cf9dc3f9f3dd087817ee1939",
+        "oraculo": "69944dc67b58b7c05ca169a5d055d20d893810ac259b5c5d6e0c4270410afa2c"
+      }
+    },
+    "aleatorizado": {
+      "label": "Histórico aleatorizado (74 eventos)",
+      "eventos": 74,
+      "n_test": 5709,
+      "prevalencia": 0.145,
+      "hashes_sha256": {
+        "LSTM": "5f6607be8c43e018062591c6edabee1aa4db393be82577433104831b60459fa0",
+        "RF": "117642144e38fc1660973e3d0b3dde3248309f0f73173658be99557a6e41fcba",
+        "umbral": "429cfaf859bb4f0c25c9d33f9d26cfdbf8d42f584f3071713a9cab0e8ab2211e",
+        "oraculo": "dca185bd86321cbeb37179145175634a893e3078fc88ede06df1da836cb76fa0"
+      }
+    },
+    "B": 3000,
+    "seed": 42
+  },
+  "tesis": {
+    "limpio": {
+      "RF - LSTM": [
+        0.194,
+        0.095,
+        0.284
+      ],
+      "LSTM - oraculo": [
+        -0.113,
+        -0.375,
+        0.065
+      ],
+      "LSTM - umbral": [
+        0.04,
+        -0.031,
+        0.153
+      ]
+    },
+    "aleatorizado": {
+      "LSTM - oraculo": [
+        0.22,
+        0.13,
+        0.302
+      ],
+      "LSTM - umbral": [
+        0.287,
+        0.222,
+        0.356
+      ],
+      "RF - LSTM": [
+        0.053,
+        -0.002,
+        0.105
+      ]
+    }
+  }
+}
